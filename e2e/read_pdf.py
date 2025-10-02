@@ -200,6 +200,7 @@ def main():
     parser.add_argument(
         '--max-files',
         type=int,
+        default=None,
         help='Maximum number of PDF files to process (default: all files)')
     parser.add_argument('--max-length', type=int, default=512,
                         help='Maximum length of each passage in characters (default: 512)')

@@ -69,7 +69,7 @@ options:
                         Number of parallel processes (default: 10)
 
 ## Sample usage
-$ python3 download_pdf.py --output_pdf doc_pdf_fixed --processes 30 
+$ python3 download_pdf.py --output_pdf doc_pdf --processes 30 
 ## Will download PDFs in ./doc_pdf/
 ```
 

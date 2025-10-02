@@ -36,7 +36,7 @@ class VectorDB:
             docstore=self._docstore,
             index_to_docstore_id={}, # This will be populated as documents are added
         )
-    
+
     def ingest(self, passages: List[str], metadatas: List[dict]):
         self._vector_store.add_texts(passages, metadatas)
 
