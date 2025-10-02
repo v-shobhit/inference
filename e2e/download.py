@@ -44,7 +44,7 @@ def download_frames_dataset(output_dir):
         return None
 
 
-def retry_failed_urls(failed_urls, output_dir, processes):
+def retry_failed_urls(failed_urls, output_dir, processes, format_type):
     """Retry downloading failed URLs."""
     if not failed_urls:
         return
@@ -53,7 +53,7 @@ def retry_failed_urls(failed_urls, output_dir, processes):
     print(f"Retrying {len(failed_urls)} failed URLs...")
 
     # Prepare arguments for retry
-    retry_args = [(url, output_dir, i + 1, len(failed_urls))
+    retry_args = [(url, output_dir, i + 1, len(failed_urls), format_type)
                   for i, (_, _, url) in enumerate(failed_urls)]
 
     # Create progress bar for retry
@@ -96,13 +96,18 @@ def retry_failed_urls(failed_urls, output_dir, processes):
 
 def process_url(args_tuple):
     """Process a single URL - designed for multiprocessing."""
-    url, output_dir, index, total = args_tuple
+    url, output_dir, index, total, format_type = args_tuple
 
     # Create safe filename
-    filename = url.replace("https://", "").replace("/", "_").replace(":", "_")
-    if len(filename) > 200:
-        filename = filename[:200]
-    filename += ".pdf"
+    base_filename = url.replace("https://", "").replace("/", "_").replace(":", "_")
+    if len(base_filename) > 200:
+        base_filename = base_filename[:200]
+    
+    # Set file extension based on format
+    if format_type == "html":
+        filename = base_filename + ".html"
+    else:  # pdf
+        filename = base_filename + ".pdf"
 
     output_path = output_dir / filename
 
@@ -110,8 +115,13 @@ def process_url(args_tuple):
     if output_path.exists():
         return True, filename, "Skipping", url
 
-    # Run wkhtmltopdf command
-    command = f'wkhtmltopdf --page-size A4 --margin-top 0.75in --margin-right 0.75in --margin-bottom 0.75in --margin-left 0.75in --encoding UTF-8 --load-error-handling ignore --load-media-error-handling ignore --javascript-delay 2000 "{url}" "{output_path}"'
+    # Choose command based on format
+    if format_type == "html":
+        # Use wget to download HTML
+        command = f'wget --timeout=120 --tries=1 --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" -O "{output_path}" "{url}"'
+    else:  # pdf
+        # Use wkhtmltopdf to convert to PDF
+        command = f'wkhtmltopdf --page-size A4 --margin-top 0.75in --margin-right 0.75in --margin-bottom 0.75in --margin-left 0.75in --encoding UTF-8 --load-error-handling ignore --load-media-error-handling ignore --javascript-delay 2000 "{url}" "{output_path}"'
 
     try:
         result = subprocess.run(
@@ -128,7 +138,8 @@ def process_url(args_tuple):
                 error_msg = f"File too small or empty ({output_path.stat().st_size if output_path.exists() else 0} bytes)"
                 return False, filename, error_msg, url
         else:
-            error_msg = f"wkhtmltopdf failed (return code: {result.returncode})"
+            tool_name = "wget" if format_type == "html" else "wkhtmltopdf"
+            error_msg = f"{tool_name} failed (return code: {result.returncode})"
             if result.stderr:
                 error_msg += f" - {result.stderr[:100]}"
             return False, filename, error_msg, url
@@ -140,7 +151,7 @@ def process_url(args_tuple):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Download FRAMES dataset from Hugging Face and convert URLs to PDFs')
+        description='Download FRAMES dataset from Hugging Face and convert URLs to PDFs or HTML files')
     parser.add_argument(
         '--tsv_path',
         default=None,
@@ -151,9 +162,9 @@ def main():
         default=None,
         help='Maximum number of URLs to process (default: all)')
     parser.add_argument(
-        '--output_pdf',
-        default='doc_pdf',
-        help='Output directory for PDFs (default: doc_pdf)')
+        '--output_dir',
+        default='doc_downloads',
+        help='Output directory for downloaded files (default: doc_downloads)')
     parser.add_argument(
         '--output_data',
         default='data',
@@ -163,16 +174,22 @@ def main():
         type=int,
         default=10,
         help='Number of parallel processes (default: 10)')
+    parser.add_argument(
+        '--format',
+        choices=['pdf', 'html'],
+        default='pdf',
+        help='Output format: pdf or html (default: pdf)')
 
     args = parser.parse_args()
 
-    # Set XDG_RUNTIME_DIR for wkhtmltopdf
-    user = getpass.getuser()
-    xdg_runtime_dir = f"/tmp/runtime-{user}"
-    os.environ["XDG_RUNTIME_DIR"] = xdg_runtime_dir
+    # Set XDG_RUNTIME_DIR for wkhtmltopdf (only needed for PDF format)
+    if args.format == 'pdf':
+        user = getpass.getuser()
+        xdg_runtime_dir = f"/tmp/runtime-{user}"
+        os.environ["XDG_RUNTIME_DIR"] = xdg_runtime_dir
 
     # Create output directories
-    output_dir = Path(args.output_pdf)
+    output_dir = Path(args.output_dir)
     output_dir.mkdir(exist_ok=True)
 
     # Determine TSV file path
@@ -188,9 +205,6 @@ def main():
 
     # Load dataset
     df = pd.read_csv(args.tsv_path, sep='\t')
-
-    # df['wiki_links'] = df['wiki_links'].apply(ast.literal_eval)
-    # wiki_dict = df['wiki_links'].to_dict()
 
     def extract_wikipedia_links(item):
         # List may itself have a single string with multiple links, comma separated
@@ -223,8 +237,8 @@ def main():
         print("No URLs found to process")
         return
 
-    print(
-        f"Processing {len(urls)} URLs with {args.processes} parallel processes...")
+    print(f"Processing {len(urls)} URLs with {args.processes} parallel processes...")
+    print(f"Output format: {args.format.upper()}")
 
     # Create progress bar
     progress_bar = tqdm(
@@ -236,7 +250,7 @@ def main():
     start_time = time.time()
 
     # Prepare arguments for multiprocessing
-    process_args = [(url, output_dir, i + 1, len(urls))
+    process_args = [(url, output_dir, i + 1, len(urls), args.format)
                     for i, url in enumerate(urls)]
 
     # Process with progress bar updates
@@ -286,7 +300,7 @@ def main():
             print()
 
         # Ask user if they want to retry failed URLs
-        retry_failed_urls(failed_urls, output_dir, args.processes)
+        retry_failed_urls(failed_urls, output_dir, args.processes, args.format)
     else:
         print(f"\n✅ All downloads completed successfully!")
 
