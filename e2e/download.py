@@ -99,10 +99,16 @@ def process_url(args_tuple):
     url, output_dir, index, total, format_type = args_tuple
 
     # Create safe filename
-    base_filename = url.replace("https://", "").replace("/", "_").replace(":", "_")
+    base_filename = url.replace(
+        "https://",
+        "").replace(
+        "/",
+        "_").replace(
+            ":",
+        "_")
     if len(base_filename) > 200:
         base_filename = base_filename[:200]
-    
+
     # Set file extension based on format
     if format_type == "html":
         filename = base_filename + ".html"
@@ -237,7 +243,8 @@ def main():
         print("No URLs found to process")
         return
 
-    print(f"Processing {len(urls)} URLs with {args.processes} parallel processes...")
+    print(
+        f"Processing {len(urls)} URLs with {args.processes} parallel processes...")
     print(f"Output format: {args.format.upper()}")
 
     # Create progress bar
