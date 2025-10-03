@@ -147,7 +147,8 @@ def process_url(args_tuple):
                 error_msg = f"File too small or empty ({output_path.stat().st_size if output_path.exists() else 0} bytes)"
                 return False, filename, error_msg, url
         else:
-            # Remove any file that might have been created during failed attempt
+            # Remove any file that might have been created during failed
+            # attempt
             if output_path.exists():
                 output_path.unlink()
             tool_name = "wget" if format_type == "html" else "wkhtmltopdf"

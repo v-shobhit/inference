@@ -156,7 +156,7 @@ def process_pdfs(input_dir, output_dir, json_file=None,
                                     'pdf_filename': pdf_file.name,
                                     'passage': clean_passage
                                 })
-                    
+
                     # Update progress bar with status
                     if create_json:
                         status = f"{len(passages_data)} passages created"

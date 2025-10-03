@@ -49,7 +49,8 @@ from tqdm import tqdm
 class PersistentWorker:
     """Persistent worker that initializes models once and processes multiple files."""
 
-    def __init__(self, worker_id: int, log_dir: str = None, progress_queue=None):
+    def __init__(self, worker_id: int, log_dir: str = None,
+                 progress_queue=None):
         self.worker_id = worker_id
         self.log_dir = log_dir
         self.progress_queue = progress_queue
@@ -70,16 +71,26 @@ class PersistentWorker:
             if self.log_dir:
                 log_dir = Path(self.log_dir)
                 log_dir.mkdir(parents=True, exist_ok=True)
-                self.stdout_file = open(log_dir / f"worker_{self.worker_id}.out", 'w', encoding='utf-8')
-                self.stderr_file = open(log_dir / f"worker_{self.worker_id}.err", 'w', encoding='utf-8')
+                self.stdout_file = open(
+                    log_dir /
+                    f"worker_{self.worker_id}.out",
+                    'w',
+                    encoding='utf-8')
+                self.stderr_file = open(
+                    log_dir /
+                    f"worker_{self.worker_id}.err",
+                    'w',
+                    encoding='utf-8')
 
                 # Redirect stdout and stderr
                 sys.stdout = self.stdout_file
                 sys.stderr = self.stderr_file
 
-                print(f"Worker {self.worker_id} starting - initializing models...")
+                print(
+                    f"Worker {self.worker_id} starting - initializing models...")
         except Exception as e:
-            print(f"Warning: Could not setup logging for worker {self.worker_id}: {e}")
+            print(
+                f"Warning: Could not setup logging for worker {self.worker_id}: {e}")
 
     def _init_models(self):
         """Initialize models once for this worker."""
@@ -109,7 +120,8 @@ class PersistentWorker:
          overlap_percentage, min_chunk_size, store_embeddings, preprocessing_args) = file_args
 
         try:
-            print(f"Worker {self.worker_id}: Processing {Path(html_file_path).name}")
+            print(
+                f"Worker {self.worker_id}: Processing {Path(html_file_path).name}")
 
             # Process the file
             chunks = self.processor.process_document(
@@ -125,9 +137,11 @@ class PersistentWorker:
                 output_file_path = output_path / output_filename
 
                 # Save chunks
-                self.processor.save_chunks(chunks, str(output_file_path), verbose=True)
+                self.processor.save_chunks(
+                    chunks, str(output_file_path), verbose=True)
 
-                print(f"Worker {self.worker_id}: Completed {html_file.name} - {len(chunks)} chunks")
+                print(
+                    f"Worker {self.worker_id}: Completed {html_file.name} - {len(chunks)} chunks")
 
                 result = {
                     'status': 'success',
@@ -142,7 +156,8 @@ class PersistentWorker:
                 return result
 
             else:
-                print(f"Worker {self.worker_id}: Failed {Path(html_file_path).name} - No chunks generated")
+                print(
+                    f"Worker {self.worker_id}: Failed {Path(html_file_path).name} - No chunks generated")
                 result = {
                     'status': 'failed',
                     'file': Path(html_file_path).name,
@@ -156,7 +171,8 @@ class PersistentWorker:
                 return result
 
         except Exception as e:
-            print(f"Worker {self.worker_id}: Error processing {Path(html_file_path).name}: {str(e)}")
+            print(
+                f"Worker {self.worker_id}: Error processing {Path(html_file_path).name}: {str(e)}")
             result = {
                 'status': 'failed',
                 'file': Path(html_file_path).name,
@@ -233,7 +249,8 @@ class WikipediaHTMLProcessor:
 
         print("Models loaded successfully!")
 
-    def extract_html_content(self, html_path: str, verbose: bool = True) -> str:
+    def extract_html_content(self, html_path: str,
+                             verbose: bool = True) -> str:
         """Extract HTML content from file."""
         if verbose:
             print(f"Reading HTML file: {html_path}")
@@ -247,26 +264,29 @@ class WikipediaHTMLProcessor:
             print(f"Error reading HTML file: {e}")
             return ""
 
-    def advanced_content_extraction(self, html_content: str, verbose: bool = True) -> str:
+    def advanced_content_extraction(
+            self, html_content: str, verbose: bool = True) -> str:
         """Use trafilatura for advanced content extraction."""
         if verbose:
             print("Using trafilatura for advanced content extraction...")
 
         # Extract main content using trafilatura
         extracted = trafilatura.extract(html_content,
-                                      include_comments=False,
-                                      include_tables=True,
-                                      include_images=False,
-                                      include_links=False,
-                                      favor_precision=True)
+                                        include_comments=False,
+                                        include_tables=True,
+                                        include_images=False,
+                                        include_links=False,
+                                        favor_precision=True)
         if extracted:
             if verbose:
                 print(f"Trafilatura extracted {len(extracted)} characters")
             return extracted
         else:
-            raise RuntimeError("Trafilatura failed to extract any content from the HTML")
+            raise RuntimeError(
+                "Trafilatura failed to extract any content from the HTML")
 
-    def basic_content_extraction(self, html_content: str, verbose: bool = True) -> str:
+    def basic_content_extraction(
+            self, html_content: str, verbose: bool = True) -> str:
         """Basic content extraction with Wikipedia-specific filtering."""
         if verbose:
             print("Using basic content extraction with Wikipedia filtering...")
@@ -321,7 +341,8 @@ class WikipediaHTMLProcessor:
                 element.decompose()
 
         # Remove comments
-        for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        for comment in soup.find_all(
+                string=lambda text: isinstance(text, Comment)):
             comment.extract()
 
         # Focus on main content areas (Wikipedia specific)
@@ -399,29 +420,38 @@ class WikipediaHTMLProcessor:
 
             # Skip elements with certain IDs
             elem_id = elem.get('id', '')
-            skip_ids = ['toc', 'references', 'external-links', 'see-also', 'notes']
+            skip_ids = [
+                'toc',
+                'references',
+                'external-links',
+                'see-also',
+                'notes']
             if elem_id.lower() in skip_ids:
                 return
 
             if elem.name in meaningful_tags:
                 # Get direct text content
-                if elem.name in ['p', 'div', 'li', 'td', 'th', 'blockquote', 'dd', 'dt']:
+                if elem.name in ['p', 'div', 'li', 'td',
+                                 'th', 'blockquote', 'dd', 'dt']:
                     text = elem.get_text(strip=True)
                     if text and self.is_meaningful_text(text):
                         text_parts.append(text)
                 elif elem.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
                     # Include headings as they provide structure
                     heading_text = elem.get_text(strip=True)
-                    if heading_text and len(heading_text) > 3:  # Skip very short headings
+                    if heading_text and len(
+                            heading_text) > 3:  # Skip very short headings
                         text_parts.append(f"\n{heading_text}\n")
 
             # Recursively process children for container elements
             if elem.name in ['div', 'section', 'article', 'main']:
                 for child in elem.children:
-                    if hasattr(child, 'name') and child.name:  # Skip text nodes
+                    if hasattr(
+                            child, 'name') and child.name:  # Skip text nodes
                         process_element(child)
 
-        # Process top-level elements (recursive processing handled inside process_element)
+        # Process top-level elements (recursive processing handled inside
+        # process_element)
         for elem in element.children:
             if hasattr(elem, 'name') and elem.name:  # Skip text nodes
                 process_element(elem)
@@ -460,7 +490,8 @@ class WikipediaHTMLProcessor:
 
         # Check if text has reasonable sentence structure
         sentences = re.split(r'[.!?]+', text)
-        meaningful_sentences = [s.strip() for s in sentences if len(s.strip()) > 10]
+        meaningful_sentences = [s.strip()
+                                for s in sentences if len(s.strip()) > 10]
 
         return len(meaningful_sentences) > 0
 
@@ -497,14 +528,16 @@ class WikipediaHTMLProcessor:
 
         return text.strip()
 
-    def semantic_chunking(self, text: str, threshold: float = 0.75, max_chunk_size: int = 400, verbose: bool = True) -> List[str]:
+    def semantic_chunking(self, text: str, threshold: float = 0.75,
+                          max_chunk_size: int = 400, verbose: bool = True) -> List[str]:
         """Perform semantic chunking based on sentence similarity."""
         if verbose:
             print("Performing semantic chunking...")
 
         # Split into sentences
         doc = self.nlp(text)
-        sentences = [sent.text.strip() for sent in doc.sents if len(sent.text.strip()) > 15]
+        sentences = [sent.text.strip()
+                     for sent in doc.sents if len(sent.text.strip()) > 15]
 
         if not sentences:
             return [text] if text else []
@@ -517,7 +550,8 @@ class WikipediaHTMLProcessor:
             return [text]
 
         # Encode sentences in batches for efficiency
-        sentence_embeddings = self.embedding_model.encode(sentences, show_progress_bar=False)
+        sentence_embeddings = self.embedding_model.encode(
+            sentences, show_progress_bar=False)
 
         chunks = []
         current_chunk = [sentences[0]]
@@ -528,7 +562,8 @@ class WikipediaHTMLProcessor:
             sentence_embedding = sentence_embeddings[i]
 
             # Calculate similarity with current chunk
-            similarity = util.cos_sim(current_embedding, sentence_embedding).item()
+            similarity = util.cos_sim(
+                current_embedding, sentence_embedding).item()
 
             # Check if we should add to current chunk
             potential_chunk_text = ' '.join(current_chunk + [sentence])
@@ -539,7 +574,8 @@ class WikipediaHTMLProcessor:
             if similarity >= threshold and potential_token_count < max_chunk_size:
                 current_chunk.append(sentence)
                 # Update chunk embedding (running average)
-                current_embedding = (current_embedding + sentence_embedding) / 2
+                current_embedding = (
+                    current_embedding + sentence_embedding) / 2
             else:
                 # Finalize current chunk and start new one
                 if current_chunk:
@@ -555,7 +591,8 @@ class WikipediaHTMLProcessor:
             print(f"Created {len(chunks)} semantic chunks")
         return chunks
 
-    def add_chunk_overlap(self, chunks: List[str], overlap_percentage: float = 0.15, max_chunk_size: int = 400, verbose: bool = True) -> List[str]:
+    def add_chunk_overlap(self, chunks: List[str], overlap_percentage: float = 0.15,
+                          max_chunk_size: int = 400, verbose: bool = True) -> List[str]:
         """Add overlap between chunks to preserve context while enforcing size limits."""
         if len(chunks) <= 1:
             return chunks
@@ -576,8 +613,9 @@ class WikipediaHTMLProcessor:
                     overlapped_chunks.append(chunk)
             else:
                 # Calculate overlap size
-                prev_words = chunks[i-1].split()
-                overlap_size = max(1, int(len(prev_words) * overlap_percentage))
+                prev_words = chunks[i - 1].split()
+                overlap_size = max(
+                    1, int(len(prev_words) * overlap_percentage))
                 overlap_text = ' '.join(prev_words[-overlap_size:])
 
                 # Combine overlap with current chunk
@@ -593,10 +631,12 @@ class WikipediaHTMLProcessor:
                     overlapped_chunks.append(combined_chunk)
 
         if verbose:
-            print(f"Added overlap to {len(overlapped_chunks)} chunks (enforcing max {max_chunk_size} words)")
+            print(
+                f"Added overlap to {len(overlapped_chunks)} chunks (enforcing max {max_chunk_size} words)")
         return overlapped_chunks
 
-    def merge_small_chunks(self, chunks: List[str], min_chunk_size: int = 50, max_chunk_size: int = 400, verbose: bool = True) -> List[str]:
+    def merge_small_chunks(self, chunks: List[str], min_chunk_size: int = 50,
+                           max_chunk_size: int = 400, verbose: bool = True) -> List[str]:
         """Merge small chunks with adjacent chunks to ensure meaningful content."""
         if not chunks:
             return chunks
@@ -631,13 +671,16 @@ class WikipediaHTMLProcessor:
                     combined = prev_chunk + ' ' + current_chunk
                     combined_words = len(combined.split())
 
-                    # If combined chunk fits within max size, merge with previous
+                    # If combined chunk fits within max size, merge with
+                    # previous
                     if combined_words <= max_chunk_size:
-                        merged_chunks[-1] = combined  # Replace last chunk with merged version
+                        # Replace last chunk with merged version
+                        merged_chunks[-1] = combined
                         i += 1
                         continue
 
-                # If can't merge with either, keep as is (better than losing content)
+                # If can't merge with either, keep as is (better than losing
+                # content)
                 merged_chunks.append(current_chunk)
             else:
                 # Chunk is already good size
@@ -645,18 +688,22 @@ class WikipediaHTMLProcessor:
 
             i += 1
 
-        # Filter out any remaining very small chunks (< 10 words) as last resort
-        final_chunks = [chunk for chunk in merged_chunks if len(chunk.split()) >= 10]
+        # Filter out any remaining very small chunks (< 10 words) as last
+        # resort
+        final_chunks = [
+            chunk for chunk in merged_chunks if len(
+                chunk.split()) >= 10]
 
         if verbose:
-            print(f"Merged {len(chunks)} chunks into {len(final_chunks)} chunks (min {min_chunk_size} words)")
+            print(
+                f"Merged {len(chunks)} chunks into {len(final_chunks)} chunks (min {min_chunk_size} words)")
         return final_chunks
 
     def process_document(self, file_path: str, extraction_method: str = "advanced",
-                        threshold: float = 0.75, max_chunk_size: int = 400,
-                        overlap_percentage: float = 0.15, min_chunk_size: int = 50,
-                        verbose: bool = True, store_embeddings: bool = False,
-                        preprocessing_args: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+                         threshold: float = 0.75, max_chunk_size: int = 400,
+                         overlap_percentage: float = 0.15, min_chunk_size: int = 50,
+                         verbose: bool = True, store_embeddings: bool = False,
+                         preprocessing_args: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """
         Complete processing pipeline for a Wikipedia HTML file.
 
@@ -690,13 +737,17 @@ class WikipediaHTMLProcessor:
 
         # Step 2: Extract meaningful content
         if extraction_method == "advanced":
-            extracted_text = self.advanced_content_extraction(html_content, verbose=verbose)
+            extracted_text = self.advanced_content_extraction(
+                html_content, verbose=verbose)
         elif extraction_method == "justext":
-            extracted_text = self.justext_extraction(html_content, verbose=verbose)
+            extracted_text = self.justext_extraction(
+                html_content, verbose=verbose)
         elif extraction_method == "basic":
-            extracted_text = self.basic_content_extraction(html_content, verbose=verbose)
+            extracted_text = self.basic_content_extraction(
+                html_content, verbose=verbose)
         else:
-            raise ValueError(f"Unknown extraction method: {extraction_method}. Must be 'advanced', 'basic', or 'justext'")
+            raise ValueError(
+                f"Unknown extraction method: {extraction_method}. Must be 'advanced', 'basic', or 'justext'")
 
         if not extracted_text:
             if verbose:
@@ -704,10 +755,15 @@ class WikipediaHTMLProcessor:
             return []
 
         if verbose:
-            print(f"Text length after extraction: {len(extracted_text)} characters")
+            print(
+                f"Text length after extraction: {len(extracted_text)} characters")
 
         # Step 3: Semantic chunking
-        chunks = self.semantic_chunking(extracted_text, threshold=threshold, max_chunk_size=max_chunk_size, verbose=verbose)
+        chunks = self.semantic_chunking(
+            extracted_text,
+            threshold=threshold,
+            max_chunk_size=max_chunk_size,
+            verbose=verbose)
 
         if not chunks:
             if verbose:
@@ -715,10 +771,18 @@ class WikipediaHTMLProcessor:
             return []
 
         # Step 4: Add overlap (enforcing final chunk size limits)
-        overlapped_chunks = self.add_chunk_overlap(chunks, overlap_percentage=overlap_percentage, max_chunk_size=max_chunk_size, verbose=verbose)
+        overlapped_chunks = self.add_chunk_overlap(
+            chunks,
+            overlap_percentage=overlap_percentage,
+            max_chunk_size=max_chunk_size,
+            verbose=verbose)
 
         # Step 5: Merge small chunks to ensure meaningful content
-        final_chunks = self.merge_small_chunks(overlapped_chunks, min_chunk_size=min_chunk_size, max_chunk_size=max_chunk_size, verbose=verbose)
+        final_chunks = self.merge_small_chunks(
+            overlapped_chunks,
+            min_chunk_size=min_chunk_size,
+            max_chunk_size=max_chunk_size,
+            verbose=verbose)
 
         # Step 6: Create final chunks (optionally with embeddings)
         if store_embeddings and verbose:
@@ -749,7 +813,8 @@ class WikipediaHTMLProcessor:
             # Conditionally add embeddings
             if store_embeddings:
                 chunk_embedding = self.embedding_model.encode(chunk)
-                chunk_data['embedding'] = chunk_embedding.tolist()  # Convert to list for JSON serialization
+                # Convert to list for JSON serialization
+                chunk_data['embedding'] = chunk_embedding.tolist()
 
             processed_chunks.append(chunk_data)
 
@@ -757,27 +822,32 @@ class WikipediaHTMLProcessor:
             print(f"Successfully processed {len(processed_chunks)} chunks")
         return processed_chunks
 
-    def justext_extraction(self, html_content: str, verbose: bool = True) -> str:
+    def justext_extraction(self, html_content: str,
+                           verbose: bool = True) -> str:
         """Use justext for content extraction."""
         if verbose:
             print("Using justext for content extraction...")
 
-        paragraphs = justext.justext(html_content, justext.get_stoplist("English"))
+        paragraphs = justext.justext(
+            html_content, justext.get_stoplist("English"))
         text_parts = []
 
         for paragraph in paragraphs:
-            if not paragraph.is_boilerplate and len(paragraph.text.strip()) > 20:
+            if not paragraph.is_boilerplate and len(
+                    paragraph.text.strip()) > 20:
                 text_parts.append(paragraph.text.strip())
 
         extracted_text = '\n\n'.join(text_parts)
         if not extracted_text.strip():
-            raise RuntimeError("Justext failed to extract any meaningful content from the HTML")
+            raise RuntimeError(
+                "Justext failed to extract any meaningful content from the HTML")
 
         if verbose:
             print(f"Justext extracted {len(extracted_text)} characters")
         return extracted_text
 
-    def save_chunks(self, chunks: List[Dict[str, Any]], output_path: str, verbose: bool = True):
+    def save_chunks(
+            self, chunks: List[Dict[str, Any]], output_path: str, verbose: bool = True):
         """Save processed chunks to JSON file."""
         if verbose:
             print(f"Saving chunks to: {output_path}")
@@ -790,12 +860,11 @@ class WikipediaHTMLProcessor:
         except Exception as e:
             print(f"Error saving chunks: {e}")
 
-
     def process_folder(self, input_folder: str, output_folder: str, extraction_method: str = "advanced",
-                      threshold: float = 0.75, max_chunk_size: int = 400,
-                      overlap_percentage: float = 0.15, min_chunk_size: int = 50,
-                      store_embeddings: bool = False, preprocessing_args: Dict[str, Any] = None,
-                      max_workers: int = 4, limit_files: int = None) -> Dict[str, Any]:
+                       threshold: float = 0.75, max_chunk_size: int = 400,
+                       overlap_percentage: float = 0.15, min_chunk_size: int = 50,
+                       store_embeddings: bool = False, preprocessing_args: Dict[str, Any] = None,
+                       max_workers: int = 4, limit_files: int = None) -> Dict[str, Any]:
         """
         Process HTML files in a folder using multiprocessing.
 
@@ -839,9 +908,11 @@ class WikipediaHTMLProcessor:
         if limit_files is not None and limit_files > 0:
             if limit_files < len(html_files):
                 html_files = html_files[:limit_files]
-                print(f"Limiting to first {limit_files} files out of {total_files_found} found")
+                print(
+                    f"Limiting to first {limit_files} files out of {total_files_found} found")
             elif limit_files >= len(html_files):
-                print(f"Limit ({limit_files}) is greater than or equal to files found ({total_files_found}), processing all files")
+                print(
+                    f"Limit ({limit_files}) is greater than or equal to files found ({total_files_found}), processing all files")
 
         print(f"\n=== PROCESSING FOLDER ===")
         print(f"Input folder: {input_folder}")
@@ -872,7 +943,8 @@ class WikipediaHTMLProcessor:
         def chunk_list(lst, n):
             """Split list into n roughly equal chunks."""
             k, m = divmod(len(lst), n)
-            return [lst[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n)]
+            return [lst[i * k + min(i, m):(i + 1) * k + min(i + 1, m)]
+                    for i in range(n)]
 
         # Create file batches for workers
         file_batches = chunk_list(html_files, max_workers)
@@ -892,25 +964,33 @@ class WikipediaHTMLProcessor:
                         for html_file in file_batch
                     ]
 
-                    worker_tasks.append((worker_id, file_args_batch, str(logs_dir), progress_queue))
+                    worker_tasks.append(
+                        (worker_id, file_args_batch, str(logs_dir), progress_queue))
 
-            print(f"Distributing {len(html_files)} files among {len(worker_tasks)} workers")
+            print(
+                f"Distributing {len(html_files)} files among {len(worker_tasks)} workers")
             for i, (worker_id, file_batch, _, _) in enumerate(worker_tasks):
                 print(f"  Worker {worker_id}: {len(file_batch)} files")
 
             # Use ProcessPoolExecutor with persistent workers
             with ProcessPoolExecutor(max_workers=len(worker_tasks)) as executor:
-                # Submit worker tasks (each worker processes its batch of files)
-                futures = [executor.submit(persistent_worker_main, worker_task) for worker_task in worker_tasks]
+                # Submit worker tasks (each worker processes its batch of
+                # files)
+                futures = [
+                    executor.submit(
+                        persistent_worker_main,
+                        worker_task) for worker_task in worker_tasks]
 
                 # Process real-time updates from workers
                 with tqdm(total=len(html_files), desc="Processing HTML files", unit="file") as pbar:
                     completed_files = 0
                     active_workers = len(worker_tasks)
 
-                    while completed_files < len(html_files) and active_workers > 0:
+                    while completed_files < len(
+                            html_files) and active_workers > 0:
                         try:
-                            # Check for progress updates (non-blocking with timeout)
+                            # Check for progress updates (non-blocking with
+                            # timeout)
                             result = progress_queue.get(timeout=0.1)
 
                             if result['status'] == 'success':
@@ -931,9 +1011,12 @@ class WikipediaHTMLProcessor:
                             pbar.update(1)
 
                         except queue.Empty:
-                            # No updates available, check if workers are still running
-                            finished_workers = sum(1 for f in futures if f.done())
-                            active_workers = len(worker_tasks) - finished_workers
+                            # No updates available, check if workers are still
+                            # running
+                            finished_workers = sum(
+                                1 for f in futures if f.done())
+                            active_workers = len(
+                                worker_tasks) - finished_workers
 
                             # Small sleep to avoid busy waiting
                             time.sleep(0.1)
@@ -965,7 +1048,8 @@ class WikipediaHTMLProcessor:
         for i, chunk in enumerate(chunks[:3]):  # Show first 3 chunks
             print(f"\nChunk {i+1}:")
             print(f"Words: {chunk['metadata']['word_count']}")
-            text_preview = chunk['text'][:250] + "..." if len(chunk['text']) > 250 else chunk['text']
+            text_preview = chunk['text'][:250] + \
+                "..." if len(chunk['text']) > 250 else chunk['text']
             print(f"Text: {text_preview}")
 
     def display_folder_summary(self, results: Dict[str, Any]):
@@ -992,31 +1076,38 @@ class WikipediaHTMLProcessor:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Process Wikipedia HTML files for RAG application')
-    parser.add_argument('input_path', help='Path to HTML file or folder containing HTML files')
-    parser.add_argument('--output', '-o', help='Output file path (for single file) or output folder path (for folder input)')
+    parser = argparse.ArgumentParser(
+        description='Process Wikipedia HTML files for RAG application')
+    parser.add_argument(
+        'input_path',
+        help='Path to HTML file or folder containing HTML files')
+    parser.add_argument(
+        '--output',
+        '-o',
+        help='Output file path (for single file) or output folder path (for folder input)')
     parser.add_argument('--method', '-m', choices=['advanced', 'basic', 'justext'],
-                       default='advanced', help='Content extraction method (default: advanced)')
+                        default='advanced', help='Content extraction method (default: advanced)')
     parser.add_argument('--threshold', '-t', type=float, default=0.75,
-                       help='Semantic similarity threshold (default: 0.75)')
+                        help='Semantic similarity threshold (default: 0.75)')
     parser.add_argument('--chunk-size', '-s', type=int, default=400,
-                       help='Maximum words per chunk after overlap is added (default: 400)')
+                        help='Maximum words per chunk after overlap is added (default: 400)')
     parser.add_argument('--overlap', type=float, default=0.15,
-                       help='Chunk overlap percentage (default: 0.15)')
+                        help='Chunk overlap percentage (default: 0.15)')
     parser.add_argument('--store-embeddings', action='store_true',
-                       help='Store embeddings in output JSON (default: False, embeddings not stored)')
+                        help='Store embeddings in output JSON (default: False, embeddings not stored)')
     parser.add_argument('--min-chunk-size', type=int, default=50,
-                       help='Minimum words per chunk - smaller chunks will be merged with adjacent chunks (default: 50)')
+                        help='Minimum words per chunk - smaller chunks will be merged with adjacent chunks (default: 50)')
     parser.add_argument('--workers', '-w', type=int, default=multiprocessing.cpu_count(),
-                       help=f'Number of worker processes for folder processing (default: {multiprocessing.cpu_count()}), max: 16')
+                        help=f'Number of worker processes for folder processing (default: {multiprocessing.cpu_count()}), max: 16')
     parser.add_argument('--limit-files', type=int, default=None,
-                       help='Limit the number of files to process from folder (default: process all files)')
+                        help='Limit the number of files to process from folder (default: process all files)')
 
     args = parser.parse_args()
 
     # Limit workers to reasonable number to avoid overwhelming the system
     if args.workers > 16:
-        print(f"Warning: Limiting workers from {args.workers} to 16 to avoid overwhelming the system")
+        print(
+            f"Warning: Limiting workers from {args.workers} to 16 to avoid overwhelming the system")
         args.workers = 16
 
     # Create preprocessing arguments dictionary for metadata
@@ -1038,10 +1129,10 @@ def main():
         # Process single file
         print("Processing single HTML file...")
         chunks = processor.process_document(str(input_path), extraction_method=args.method,
-                                          threshold=args.threshold, max_chunk_size=args.chunk_size,
-                                          overlap_percentage=args.overlap, min_chunk_size=args.min_chunk_size,
-                                          store_embeddings=args.store_embeddings,
-                                          preprocessing_args=preprocessing_args)
+                                            threshold=args.threshold, max_chunk_size=args.chunk_size,
+                                            overlap_percentage=args.overlap, min_chunk_size=args.min_chunk_size,
+                                            store_embeddings=args.store_embeddings,
+                                            preprocessing_args=preprocessing_args)
 
         if not chunks:
             print("Failed to process document")
@@ -1074,11 +1165,11 @@ def main():
 
         # Process all HTML files in folder
         results = processor.process_folder(str(input_path), output_folder, args.method,
-                                         threshold=args.threshold, max_chunk_size=args.chunk_size,
-                                         overlap_percentage=args.overlap, min_chunk_size=args.min_chunk_size,
-                                         store_embeddings=args.store_embeddings,
-                                         preprocessing_args=preprocessing_args, max_workers=args.workers,
-                                         limit_files=args.limit_files)
+                                           threshold=args.threshold, max_chunk_size=args.chunk_size,
+                                           overlap_percentage=args.overlap, min_chunk_size=args.min_chunk_size,
+                                           store_embeddings=args.store_embeddings,
+                                           preprocessing_args=preprocessing_args, max_workers=args.workers,
+                                           limit_files=args.limit_files)
 
         if "error" in results:
             print(f"Error: {results['error']}")
@@ -1092,8 +1183,10 @@ def main():
         print(f"Output saved to folder: {output_folder}")
 
     else:
-        print(f"Error: Input path '{args.input_path}' is neither a file nor a directory")
+        print(
+            f"Error: Input path '{args.input_path}' is neither a file nor a directory")
         return
+
 
 if __name__ == "__main__":
     # Required for multiprocessing on Windows and some other platforms

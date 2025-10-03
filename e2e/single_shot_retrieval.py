@@ -4,16 +4,19 @@ import time
 import pandas as pd
 from retrieve import VectorDB
 
-# Taken below from frames: https://huggingface.co/datasets/google/frames-benchmark
+# Taken below from frames:
+# https://huggingface.co/datasets/google/frames-benchmark
 DEFAULT_QUERY = "Who won the French Open Mens Singles tournament the year that New York City FC won their first MLS Cup title?"
+
 
 def load_queries_from_frames_tsv(tsv_path, num_queries):
     """Load the first num_queries from the frames dataset TSV file."""
     try:
         df = pd.read_csv(tsv_path, sep='\t')
         if 'Prompt' not in df.columns:
-            raise ValueError(f"'Prompt' column not found in {tsv_path}. Available columns: {list(df.columns)}")
-        
+            raise ValueError(
+                f"'Prompt' column not found in {tsv_path}. Available columns: {list(df.columns)}")
+
         # Get the first num_queries rows
         queries = df['Prompt'].head(num_queries).tolist()
         print(f"Loaded {len(queries)} queries from {tsv_path}")
@@ -24,29 +27,57 @@ def load_queries_from_frames_tsv(tsv_path, num_queries):
 
 
 if __name__ == "__main__":
-    args = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    args = argparse.ArgumentParser(
+        formatter_class=argparse.RawTextHelpFormatter)
     args.add_argument("--passages", type=str, default=None, help="Path to the JSON array file with passages\n"
-                        "'passage' will be the passage text\n"
-                        "all other keys will be metadata\n"
-                        "Example: [{'index': int, 'pdf_filename': str, 'passage': str}]\n"
-                        "Ignored if --vector_store is provided")
+                      "'passage' will be the passage text\n"
+                      "all other keys will be metadata\n"
+                      "Example: [{'index': int, 'pdf_filename': str, 'passage': str}]\n"
+                      "Ignored if --vector_store is provided")
 
-    args.add_argument("--passage_count", type=int, default=None, help="Number of passages to ingest from --passages file, defaults to all")
+    args.add_argument(
+        "--passage_count",
+        type=int,
+        default=None,
+        help="Number of passages to ingest from --passages file, defaults to all")
     args.add_argument("--vector_store", type=str, default=None, help="Path to the vector store file\n"
-                        "If provided, --passages will be ignored")
+                      "If provided, --passages will be ignored")
 
-    args.add_argument("--query", type=str, default=DEFAULT_QUERY, help="Query to search for (ignored if --num_queries is provided)")
-    args.add_argument("--num_queries", type=int, default=None, help="Number of queries to process from frames dataset TSV file")
-    args.add_argument("--frames_tsv", type=str, default="data/frames_dataset.tsv", help="Path to frames dataset TSV file")
+    args.add_argument(
+        "--query",
+        type=str,
+        default=DEFAULT_QUERY,
+        help="Query to search for (ignored if --num_queries is provided)")
+    args.add_argument(
+        "--num_queries",
+        type=int,
+        default=None,
+        help="Number of queries to process from frames dataset TSV file")
+    args.add_argument(
+        "--frames_tsv",
+        type=str,
+        default="data/frames_dataset.tsv",
+        help="Path to frames dataset TSV file")
 
-    args.add_argument("--retriever_model", type=str, default="intfloat/e5-base-v2")
-    args.add_argument("--reranker_model", type=str, default="colbert-ir/colbertv2.0", help="Model to use for reranking")
+    args.add_argument(
+        "--retriever_model",
+        type=str,
+        default="intfloat/e5-base-v2")
+    args.add_argument(
+        "--reranker_model",
+        type=str,
+        default="colbert-ir/colbertv2.0",
+        help="Model to use for reranking")
 
     args.add_argument("--top_k", type=int, default=10)
     args = args.parse_args()
 
-    assert (args.vector_store is None) != (args.passages is None), "Exactly one of --vector_store or --passages must be provided"
-    vector_store = VectorDB(retriever_model=args.retriever_model, reranker_model=args.reranker_model)
+    assert (
+        args.vector_store is None) != (
+        args.passages is None), "Exactly one of --vector_store or --passages must be provided"
+    vector_store = VectorDB(
+        retriever_model=args.retriever_model,
+        reranker_model=args.reranker_model)
 
     # Load vector store or ingest passages
     if args.vector_store:
@@ -54,7 +85,8 @@ if __name__ == "__main__":
     else:
         passage_data = json.load(open(args.passages))
         passage_list = [p.pop('passage') for p in passage_data]
-        passage_metadata = [p for p in passage_data] # All keys except 'passage' are metadata
+        # All keys except 'passage' are metadata
+        passage_metadata = [p for p in passage_data]
 
         if args.passage_count is not None:
             passage_list = passage_list[:args.passage_count]
@@ -64,11 +96,13 @@ if __name__ == "__main__":
         tic = time.time()
         vector_store.ingest(passage_list, passage_metadata)
         toc = time.time()
-        print(f"Ingestion of {len(passage_list)} passages took {toc - tic} seconds")
+        print(
+            f"Ingestion of {len(passage_list)} passages took {toc - tic} seconds")
 
     # Determine queries to process
     if args.num_queries is not None:
-        queries = load_queries_from_frames_tsv(args.frames_tsv, args.num_queries)
+        queries = load_queries_from_frames_tsv(
+            args.frames_tsv, args.num_queries)
         if queries is None:
             print("Failed to load queries from TSV file. Exiting.")
             exit(1)
@@ -95,7 +129,7 @@ if __name__ == "__main__":
         print(f"\nTop-{args.top_k} retrieval results:")
         for j, result in enumerate(results):
             print(f"{j+1}. {result.metadata}")
-        
+
         # Rerank
         top_k_passages = [result.page_content for result in results]
         print(f"\nReranking {len(results)} passages...")
@@ -135,5 +169,7 @@ if __name__ == "__main__":
     total_rerank_time = sum(r['rerank_time'] for r in all_results)
     print(f"Total lookup time: {total_lookup_time:.3f} seconds")
     print(f"Total rerank time: {total_rerank_time:.3f} seconds")
-    print(f"Average lookup time per query: {total_lookup_time/len(queries):.3f} seconds")
-    print(f"Average rerank time per query: {total_rerank_time/len(queries):.3f} seconds")
+    print(
+        f"Average lookup time per query: {total_lookup_time/len(queries):.3f} seconds")
+    print(
+        f"Average rerank time per query: {total_rerank_time/len(queries):.3f} seconds")
