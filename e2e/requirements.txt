@@ -7,3 +7,12 @@ faiss-cpu
 langchain
 langchain-community
 langchain-huggingface
+beautifulsoup4
+lxml
+spacy
+sentence-transformers
+numpy
+trafilatura
+justext
+requests
+tqdm
