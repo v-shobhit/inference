@@ -141,17 +141,29 @@ def process_url(args_tuple):
             if output_path.exists() and output_path.stat().st_size > 1000:
                 return True, filename, "Success", url
             else:
+                # Remove empty or too small file
+                if output_path.exists():
+                    output_path.unlink()
                 error_msg = f"File too small or empty ({output_path.stat().st_size if output_path.exists() else 0} bytes)"
                 return False, filename, error_msg, url
         else:
+            # Remove any file that might have been created during failed attempt
+            if output_path.exists():
+                output_path.unlink()
             tool_name = "wget" if format_type == "html" else "wkhtmltopdf"
             error_msg = f"{tool_name} failed (return code: {result.returncode})"
             if result.stderr:
                 error_msg += f" - {result.stderr[:100]}"
             return False, filename, error_msg, url
     except subprocess.TimeoutExpired:
+        # Remove any file that might have been created during timeout
+        if output_path.exists():
+            output_path.unlink()
         return False, filename, "Timeout (120s)", url
     except Exception as e:
+        # Remove any file that might have been created during exception
+        if output_path.exists():
+            output_path.unlink()
         return False, filename, f"Exception: {str(e)[:100]}", url
 
 

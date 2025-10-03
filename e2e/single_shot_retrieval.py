@@ -30,14 +30,18 @@ if __name__ == "__main__":
                         "all other keys will be metadata\n"
                         "Example: [{'index': int, 'pdf_filename': str, 'passage': str}]\n"
                         "Ignored if --vector_store is provided")
+
     args.add_argument("--passage_count", type=int, default=None, help="Number of passages to ingest from --passages file, defaults to all")
     args.add_argument("--vector_store", type=str, default=None, help="Path to the vector store file\n"
                         "If provided, --passages will be ignored")
+
     args.add_argument("--query", type=str, default=DEFAULT_QUERY, help="Query to search for (ignored if --num_queries is provided)")
     args.add_argument("--num_queries", type=int, default=None, help="Number of queries to process from frames dataset TSV file")
     args.add_argument("--frames_tsv", type=str, default="data/frames_dataset.tsv", help="Path to frames dataset TSV file")
+
     args.add_argument("--retriever_model", type=str, default="intfloat/e5-base-v2")
-    args.add_argument("--reranker_model", type=str, default="colbert-ir/colbertv2.0", help="Model to use for reranking - unused for now")
+    args.add_argument("--reranker_model", type=str, default="colbert-ir/colbertv2.0", help="Model to use for reranking")
+
     args.add_argument("--top_k", type=int, default=10)
     args = args.parse_args()
 
