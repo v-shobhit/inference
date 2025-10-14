@@ -6,7 +6,6 @@ Creates 8 histograms as specified.
 
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 from pathlib import Path
 import argparse
