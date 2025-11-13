@@ -10,13 +10,25 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 class VectorDB:
     def __init__(self,
                  retriever_model: str = None,
-                 reranker_model: str = None
+                 reranker_model: str = None,
+                 device: str = None
                  ):
         self._retriever_model_name = retriever_model
         self._reranker_model_name = reranker_model
+        
+        # Auto-detect device if not specified
+        if device is None:
+            self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        else:
+            self._device = device
+        
+        print(f"Using device: {self._device}")
 
+        # Initialize embedding model with device support
+        model_kwargs = {'device': self._device}
         self._embedding_model = HuggingFaceEmbeddings(
-            model_name=self._retriever_model_name)  # Embedding model == retriever model
+            model_name=self._retriever_model_name,
+            model_kwargs=model_kwargs)  # Embedding model == retriever model
         self._embedding_dimension = len(
             self._embedding_model.embed_query("hello world"))
 
@@ -27,7 +39,10 @@ class VectorDB:
                 self._reranker_model_name)
             self._reranker_tokenizer = AutoTokenizer.from_pretrained(
                 self._reranker_model_name)
+            # Move reranker to device
+            self._reranker_model = self._reranker_model.to(self._device)
             self._reranker_model.eval()
+            print(f"Reranker model loaded on {self._device}")
 
         # The index defines the algoriothm used for the similarity search
         self._index = faiss.IndexFlatL2(self._embedding_dimension)
@@ -60,6 +75,8 @@ class VectorDB:
                 return_tensors='pt',
                 truncation=True,
                 max_length=512)
+            # Move inputs to device
+            inputs = {k: v.to(self._device) for k, v in inputs.items()}
             scores = self._reranker_model(**inputs).logits.view(-1).float()
 
         scored_passages = list(zip(passages, scores.tolist()))

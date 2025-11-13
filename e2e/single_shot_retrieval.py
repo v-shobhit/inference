@@ -68,6 +68,11 @@ if __name__ == "__main__":
         type=str,
         default="colbert-ir/colbertv2.0",
         help="Model to use for reranking")
+    args.add_argument(
+        "--device",
+        type=str,
+        default=None,
+        help="Device to use for inference (cuda/cpu). Auto-detects if not specified.")
 
     args.add_argument("--top_k", type=int, default=10)
     args = args.parse_args()
@@ -77,7 +82,8 @@ if __name__ == "__main__":
         args.passages is None), "Exactly one of --vector_store or --passages must be provided"
     vector_store = VectorDB(
         retriever_model=args.retriever_model,
-        reranker_model=args.reranker_model)
+        reranker_model=args.reranker_model,
+        device=args.device)
 
     # Load vector store or ingest passages
     if args.vector_store:

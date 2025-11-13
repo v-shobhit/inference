@@ -1,18 +1,29 @@
+# Minimal requirements for download_wiki_clean.py with semantic chunking
+# Compatible with Python 3.12+
+
+# Core
 pandas>=2.0.0
 datasets>=4.0.0
 tqdm>=4.66.0
-PyMuPDF>=1.23.0
-sentence-transformers~=5.1.0
+
+# Wikipedia API
+requests>=2.31.0
+urllib3<2  # For compatibility with older OpenSSL
+
+# Semantic chunking - Python 3.12+ compatible versions
+numpy>=1.26.0  # Required for Python 3.12+
+torch>=2.0.0
+transformers>=4.30.0,<4.46.0  # Avoid torchao bug in 4.46+
+sentence-transformers>=2.7.0,<3.0.0
+spacy>=3.7.0
+
+# Vector store and embeddings
 faiss-cpu
+
+# RAG frameworks
 langchain
 langchain-community
 langchain-huggingface
-beautifulsoup4
-lxml
-spacy
-sentence-transformers
-numpy
-trafilatura
-justext
-requests
-tqdm
+
+# After installing, run:
+# python -m spacy download en_core_web_sm

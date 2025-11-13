@@ -25,16 +25,11 @@ You may use either:
 ### Enroot setup
 If you have enroot, you can get started by:
 ```bash
-mkdir -p containers/
-
-enroot import -o containers/my_image.sqsh dockerd://docker_image:tag 
-# For example, docker://pytorch/pytorch:2.8.0-cuda12.9-cudnn9-runtime
-
-enroot create --name my_sandbox containers/my_image.sqsh
-
+mkdir containers/ && cd containers \
+  enroot import -o nv-pyt-25.10.sqsh dockerd://nvcr.io/nvidia/pytorch:25.10-py3 && cd -
+enroot create --name pyt containers/nv-pyt-25.10.sqsh
 enroot start --root --rw \
-    --mount /actual/path:/mounted/path \
-    --mount $(pwd):/work my_sandbox
+  --mount $(pwd):/work pyt
 
 ## Once inside sandbox, install dependancies via
 cd /work && ./setup.sh
@@ -46,45 +41,123 @@ Starting from [FRAMES](https://huggingface.co/datasets/google/frames-benchmark),
 [UserQuery, WikiLinks, Answer]
 ```
 
-We extract all the unique wikipedia links, and download the web pages as PDFs. This is done using [`wkhtmltopdf`](https://wkhtmltopdf.org/).
+### Method 1: Clean Wikipedia Content (Recommended)
+We extract all the unique Wikipedia links and download **clean article content** directly using the Wikipedia API. This approach is inspired by [WikiExtractor](https://github.com/attardi/wikiextractor) and provides several advantages over HTML/PDF:
 
-You may use [download_pdf.py](./download_pdf.py) script. 
+**Advantages:**
+- ✅ **Cleaner content**: No navigation bars, sidebars, references, or irrelevant HTML artifacts
+- ✅ **Faster processing**: Direct API access, no HTML/PDF parsing needed
+- ✅ **Better RAG quality**: Only article text content, improving retrieval accuracy
+- ✅ **Automatic cleaning**: Removes "See also", "References", "External links" sections
+- ✅ **Smaller storage**: Plain text files instead of HTML/PDF
+
+You may use the [download_wiki_clean.py](./download_wiki_clean.py) script:
 ```bash
-$ python3 download_pdf.py --help
-usage: download_pdf.py [-h] [--tsv_path TSV_PATH] [--max_urls MAX_URLS] [--output_pdf OUTPUT_PDF]
-                       [--output_data OUTPUT_DATA] [--processes PROCESSES]
+$ python3 download_wiki_clean.py --help
+usage: download_wiki_clean.py [-h] [--tsv_path TSV_PATH] [--output_dir OUTPUT_DIR]
+                               [--output_data OUTPUT_DATA] [--max_urls MAX_URLS]
+                               [--processes PROCESSES] [--create_chunks]
+                               [--chunk_size CHUNK_SIZE] [--overlap OVERLAP]
 
-Download FRAMES dataset from Hugging Face and convert URLs to PDFs
+Download clean Wikipedia articles from FRAMES dataset using Wikipedia API
+
+options:
+  -h, --help            show this help message and exit
+  --tsv_path TSV_PATH   Input TSV file with FRAMES data (default: download from Hugging Face)
+  --output_dir OUTPUT_DIR
+                        Output directory for clean article text files (default: wiki_clean_articles)
+  --output_data OUTPUT_DATA
+                        Output directory for dataset file (default: data)
+  --max_urls MAX_URLS   Maximum number of URLs to process (default: all)
+  --processes PROCESSES
+                        Number of parallel processes (default: 10)
+  --create_chunks       Create passages JSON file with chunked content
+  --chunk_size CHUNK_SIZE
+                        Maximum characters per chunk (default: 512)
+  --overlap OVERLAP     Overlap between chunks in characters (default: 50)
+
+## Sample usage - Download and create passages in one step
+$ python3 download_wiki_clean.py --output_dir wiki_clean --processes 20 --create_chunks --chunk_size 512 --overlap 50
+
+## Or download first, then create passages later
+$ python3 download_wiki_clean.py --output_dir wiki_clean --processes 20
+$ python3 download_wiki_clean.py --output_dir wiki_clean --create_chunks
+```
+
+### Method 2: HTML/PDF Download (Legacy)
+**Note:** This method is deprecated in favor of the clean Wikipedia content approach above.
+
+The legacy approach downloads web pages as PDFs using [`wkhtmltopdf`](https://wkhtmltopdf.org/) or as HTML files.
+
+You may use the [download.py](./download.py) script (formerly download_pdf.py):
+```bash
+$ python3 download.py --help
+usage: download.py [-h] [--tsv_path TSV_PATH] [--max_urls MAX_URLS]
+                   [--output_dir OUTPUT_DIR] [--output_data OUTPUT_DATA]
+                   [--processes PROCESSES] [--format {pdf,html}]
+
+Download FRAMES dataset from Hugging Face and convert URLs to PDFs or HTML files
 
 options:
   -h, --help            show this help message and exit
   --tsv_path TSV_PATH   Input TSV file (default: download FRAMES dataset)
   --max_urls MAX_URLS   Maximum number of URLs to process (default: all)
-  --output_pdf OUTPUT_PDF
-                        Output directory for PDFs (default: doc_pdf)
+  --output_dir OUTPUT_DIR
+                        Output directory for downloaded files (default: doc_downloads)
   --output_data OUTPUT_DATA
-                        Output directory for dataset file, if downloaded from Hugging Face (default:
-                        data)
+                        Output directory for dataset file (default: data)
   --processes PROCESSES
                         Number of parallel processes (default: 10)
+  --format {pdf,html}   Output format: pdf or html (default: pdf)
 
 ## Sample usage
-$ python3 download_pdf.py --output_pdf doc_pdf --processes 30 
-## Will download PDFs in ./doc_pdf/
+$ python3 download.py --output_dir doc_pdf --format pdf --processes 30
+$ python3 download.py --output_dir doc_html --format html --processes 30
 ```
 
 ## Corpus preprocessing
-We now need to extract text content from the set of PDFs. This is done using the [PyMuPDF](https://pypi.org/project/PyMuPDF/) package (also referred to as `fitz`)
+
+### For Clean Wikipedia Content (Method 1)
+When using the `download_wiki_clean.py` script with the `--create_chunks` flag, preprocessing is **already done**! The script outputs:
+- Clean text files (one per Wikipedia article)
+- Metadata JSON files (article title, URL, etc.)
+- A `passages.json` file with chunked content ready for RAG
+
+The passages JSON has the following schema:
+```json
+{
+    "index": 0,
+    "article_filename": "Article_Title.txt",
+    "article_title": "Article Title",
+    "article_url": "https://en.wikipedia.org/wiki/Article_Title",
+    "source_url": "https://en.wikipedia.org/wiki/Article_Title",
+    "passage": "Clean text passage from the article",
+    "passage_length": 450
+}
+```
+
+**No additional preprocessing needed!** The text is already clean and chunked.
+
+### For HTML Files (Method 2 - Legacy)
+If you downloaded HTML files, you can process them using the [preprocess_html.py](./preprocess_html.py) script:
+```bash
+$ python3 preprocess_html.py --help
+# Process all HTML files in a folder
+python preprocess_html.py path/to/html/folder --output path/to/output/folder --workers 8
+```
+
+### For PDF Files (Method 2 - Legacy)
+If you downloaded PDFs, you need to extract text content using [PyMuPDF](https://pypi.org/project/PyMuPDF/) (`fitz`).
 
 Important considerations:
 - Extracted text from a single PDF document has many characters.
 - However, embedding models (especially rerankers like [`ColBERTv2`](https://huggingface.co/colbert-ir/colbertv2.0)) have a size restriction on the maximum length of sequence they can encode (~512). 
-- Thus, we break down a single PDFs into chunks. We call these chunks "passages".
+- Thus, we break down PDFs into chunks called "passages".
     - Each passage belongs to a single unique PDF source.
 
 In this step:
-- our input is a set of PDFs
-- our output is:
+- Input: a set of PDFs
+- Output:
     - a set of txt documents (1 per PDF), and
     - a JSON file of passages.
 
@@ -97,7 +170,7 @@ The passages JSON has a schema as follows:
 }
 ```
 
-You may use the [`read_pdf.py`](./read_pdf.py) script. 
+You may use the [`read_pdf.py`](./read_pdf.py) script:
 ```bash
 $ python3 read_pdf.py --help
 usage: read_pdf.py [-h] [--json-file JSON_FILE] [--max-files MAX_FILES] [--max-length MAX_LENGTH]
@@ -120,15 +193,15 @@ options:
                         Maximum length of each passage in characters (default: 512)
   --overlap OVERLAP     Overlap between passages in characters (default: 50)
 
-
 ## Sample usage
 $ python3 read_pdf.py doc_pdf doc_txt_len256_overlap32 --max-length 256 --json-file doc_txt_fixed_len256_overlap32/passages.json --overlap 32
 ```
 
-### TODO Items for passage chunking:
-1. Chunking is done at a character level right now. We may need to do this at the token level directly to avoid truncation.
-2. Need to assess the quality of text extraction from the PyMuPDF package - right now, it seems like some texts are jumbled in order. 
-3. Passage size will directly affect vector operations. Need to study impact of passage len + overlap on vector size, ingestion time, lookup time, etc.
+### Important Notes on Chunking:
+1. **Clean Wikipedia method**: Uses sentence-aware chunking that preserves sentence boundaries for better context.
+2. **PDF/HTML method**: Character-level chunking may split sentences mid-way.
+3. Passage size directly affects vector operations. Consider the impact of passage length + overlap on vector size, ingestion time, and lookup time.
+4. For the clean Wikipedia method, recommended settings: `--chunk_size 512 --overlap 50`
 
 ## Single-shot lookup
 1. Embed query: `Query text` -> `Query Tokens` -> `Query vector`

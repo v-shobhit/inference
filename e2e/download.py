@@ -226,20 +226,45 @@ def main():
     df = pd.read_csv(args.tsv_path, sep='\t')
 
     def extract_wikipedia_links(item):
-        # List may itself have a single string with multiple links, comma separated
-        # Hence, we use regex matching
-
-        # Convert string to proper list if needed
-        if isinstance(item, str):
-            item = ast.literal_eval(item)
-
-        # Results holder
+        """
+        Extract Wikipedia links from FRAMES dataset wiki_links field.
+        
+        Handles malformed data where multiple URLs are concatenated with ", "
+        Example: ['url1', 'url2, url3, url4'] - split the concatenated URLs
+        """
         links = []
-        for entry in item:
-            # Find all links, including in Markdown format, within the string
-            matches = re.findall(
-                r'https://en\.wikipedia\.org/wiki/[^\s,\]]+', entry)
-            links.extend(matches)
+        
+        # Handle different input types
+        if isinstance(item, list):
+            # Already a list - but may contain concatenated URLs
+            for element in item:
+                if isinstance(element, str):
+                    # Check if element contains multiple URLs (malformed data)
+                    if ', https://en.wikipedia.org/wiki/' in element:
+                        # Split by ', ' and clean up each URL
+                        parts = element.split(', ')
+                        for part in parts:
+                            url = part.strip()
+                            if url.startswith('https://en.wikipedia.org/wiki/'):
+                                links.append(url)
+                    elif element.startswith('https://en.wikipedia.org/wiki/'):
+                        links.append(element)
+        
+        elif isinstance(item, str):
+            try:
+                # Try to parse as Python list
+                parsed = ast.literal_eval(item)
+                if isinstance(parsed, list):
+                    # Recursively handle the parsed list
+                    return extract_wikipedia_links(parsed)
+                elif isinstance(parsed, str) and parsed.startswith('https://en.wikipedia.org/wiki/'):
+                    links = [parsed]
+            except (ValueError, SyntaxError):
+                # If parsing fails, try to extract URLs as fallback
+                matches = re.findall(
+                    r'https://en\.wikipedia\.org/wiki/[^\s\]\'"]+', item)
+                links = matches
+        
         return links
 
     # Apply to all rows in df.wiki_links
