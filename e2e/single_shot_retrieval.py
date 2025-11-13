@@ -2,7 +2,7 @@ import argparse
 import json
 import time
 import pandas as pd
-from retrieve import VectorDB
+from vectordb import VectorDB
 
 # Taken below from frames:
 # https://huggingface.co/datasets/google/frames-benchmark
