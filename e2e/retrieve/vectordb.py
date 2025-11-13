@@ -15,13 +15,13 @@ class VectorDB:
                  ):
         self._retriever_model_name = retriever_model
         self._reranker_model_name = reranker_model
-        
+
         # Auto-detect device if not specified
         if device is None:
             self._device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
             self._device = device
-        
+
         print(f"Using device: {self._device}")
 
         # Initialize embedding model with device support

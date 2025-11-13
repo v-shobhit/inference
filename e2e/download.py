@@ -228,12 +228,12 @@ def main():
     def extract_wikipedia_links(item):
         """
         Extract Wikipedia links from FRAMES dataset wiki_links field.
-        
+
         Handles malformed data where multiple URLs are concatenated with ", "
         Example: ['url1', 'url2, url3, url4'] - split the concatenated URLs
         """
         links = []
-        
+
         # Handle different input types
         if isinstance(item, list):
             # Already a list - but may contain concatenated URLs
@@ -245,11 +245,12 @@ def main():
                         parts = element.split(', ')
                         for part in parts:
                             url = part.strip()
-                            if url.startswith('https://en.wikipedia.org/wiki/'):
+                            if url.startswith(
+                                    'https://en.wikipedia.org/wiki/'):
                                 links.append(url)
                     elif element.startswith('https://en.wikipedia.org/wiki/'):
                         links.append(element)
-        
+
         elif isinstance(item, str):
             try:
                 # Try to parse as Python list
@@ -264,7 +265,7 @@ def main():
                 matches = re.findall(
                     r'https://en\.wikipedia\.org/wiki/[^\s\]\'"]+', item)
                 links = matches
-        
+
         return links
 
     # Apply to all rows in df.wiki_links
