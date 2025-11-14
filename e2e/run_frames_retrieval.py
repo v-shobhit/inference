@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
 FRAMES Retrieval Pipeline
-Performs retrieval, reranking and rewriting on the FRAMES benchmark dataset.
+Performs iterative query generation, retrieval, and reranking on the FRAMES benchmark dataset.
 
-Usage:
-    # Run with config file
-    python run_frames_retrieval.py --config config.yml
+Flow (per step):
+1. Query Generation: Generate multiple search queries (using context from previous steps)
+2. Retrieval: Retrieve passages for each generated query
+3. Reranking: Rerank and filter retrieved passages
+4. Context Update: Use retrieved passages to inform next step
 
+Finally, deduplicate and filter all results across all steps.
+"""
+
+CONFIG_EXAMPLE = """
 Minimal configuration file (config.yml):
 ```yaml
 data:
@@ -34,17 +40,18 @@ rewriter:
   temperature: 0.7
   max_tokens: 1024
 
+parallel:
+  max_workers: 4  # Optional: Number of parallel workers (default: 1 = sequential)
+
 output:
   results: "data/retrieval_results.pkl"
-  rewriter_io: "data/rewriter_io.pkl"
+  rewriter_io: "data/rewriter_io.pkl"      # Optional: save query generation I/O
+  retriever_io: "data/retriever_io.pkl"    # Optional: save retrieval I/O
+  reranker_io: "data/reranker_io.pkl"      # Optional: save reranking I/O
 ```
-
-Set rewriter.enabled: false for direct retrieval without query rewriting.
-See config.example.yml for detailed documentation of all options.
-    
-    # Override specific settings
-    python run_frames_retrieval.py --config config.yml --num-prompts 10 --verbose
 """
+
+
 
 import argparse
 import json
@@ -184,12 +191,26 @@ def print_config_summary(config: Dict[str, Any]) -> None:
         print(f"  Temperature: {rewriter.get('temperature', 0.7)}")
         print(f"  Max tokens: {rewriter.get('max_tokens', 500)}")
     
+    # Parallel section
+    parallel = config.get('parallel', {})
+    max_workers = parallel.get('max_workers', 1)
+    print("\n[Parallel Processing]")
+    if max_workers and max_workers > 1:
+        print(f"  Enabled: True")
+        print(f"  Max workers: {max_workers}")
+    else:
+        print(f"  Enabled: False (sequential processing)")
+    
     # Output section
     output = config.get('output', {})
     print("\n[Output]")
     print(f"  Results: {output.get('results', 'retrieval_results.pkl')}")
     if output.get('rewriter_io'):
         print(f"  Rewriter I/O: {output['rewriter_io']}")
+    if output.get('retriever_io'):
+        print(f"  Retriever I/O: {output['retriever_io']}")
+    if output.get('reranker_io'):
+        print(f"  Reranker I/O: {output['reranker_io']}")
     print(f"  Save JSON: {output.get('save_json', False)}")
     print(f"  Save CSV: {output.get('save_csv', False)}")
     print(f"  Verbose: {output.get('verbose', False)}")
@@ -198,9 +219,11 @@ def print_config_summary(config: Dict[str, Any]) -> None:
 
 
 def main():
+    
     parser = argparse.ArgumentParser(
         description="FRAMES Retrieval Pipeline with YAML Configuration",
-        formatter_class=argparse.RawTextHelpFormatter
+        epilog=CONFIG_EXAMPLE,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument(
@@ -226,6 +249,11 @@ def main():
         type=str,
         help="Override: Output file path for results"
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        help="Override: Number of parallel workers (1 = sequential, >1 = parallel)"
+    )
     
     args = parser.parse_args()
     
@@ -241,6 +269,10 @@ def main():
         config['output']['verbose'] = True
     if args.output:
         config['output']['results'] = args.output
+    if args.max_workers is not None:
+        if 'parallel' not in config:
+            config['parallel'] = {}
+        config['parallel']['max_workers'] = args.max_workers
     
     # Print configuration summary
     print_config_summary(config)
@@ -324,10 +356,15 @@ def main():
         verbose=verbose
     )
     
+    # Get parallel processing configuration
+    parallel_config = config.get('parallel', {})
+    max_workers = parallel_config.get('max_workers', 1)
+    
     # Create batch processor
     processor = BatchProcessor(
         engine=engine,
-        verbose=verbose
+        verbose=verbose,
+        max_workers=max_workers
     )
     
     # Build processing configuration
@@ -341,7 +378,9 @@ def main():
         'num_rewriter_queries': rewriter_config.get('queries_per_step', 3),
         'rewriter_model': rewriter_config.get('model'),
         'rewriter': rewriter,
-        'rewriter_io': 'rewriter_io' in output_config
+        'rewriter_io': 'rewriter_io' in output_config,
+        'retriever_io': 'retriever_io' in output_config,
+        'reranker_io': 'reranker_io' in output_config
     }
     
     # Print processing header
@@ -359,7 +398,7 @@ def main():
     print(f"{'='*80}\n")
     
     # Process all prompts
-    df, rewriter_io_data, stats = processor.process_prompts(prompts, proc_config)
+    df, io_data, stats = processor.process_prompts(prompts, proc_config)
     
     # Save results
     print(f"\n{'='*80}")
@@ -375,10 +414,26 @@ def main():
     ResultsExporter.save(df, output_path, formats=formats, verbose=True)
     
     # Save rewriter I/O if requested
-    if 'rewriter_io' in output_config and rewriter_io_data:
+    if 'rewriter_io' in output_config and io_data.get('rewriter'):
         ResultsExporter.save_rewriter_io(
-            rewriter_io_data,
+            io_data['rewriter'],
             output_config['rewriter_io'],
+            verbose=True
+        )
+    
+    # Save retriever I/O if requested
+    if 'retriever_io' in output_config and io_data.get('retriever'):
+        ResultsExporter.save_retriever_io(
+            io_data['retriever'],
+            output_config['retriever_io'],
+            verbose=True
+        )
+    
+    # Save reranker I/O if requested
+    if 'reranker_io' in output_config and io_data.get('reranker'):
+        ResultsExporter.save_reranker_io(
+            io_data['reranker'],
+            output_config['reranker_io'],
             verbose=True
         )
     

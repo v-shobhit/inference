@@ -233,4 +233,78 @@ class ResultsExporter:
                 
                 if reasoning_count > 0:
                     print(f"   ⚠️  {reasoning_count}/{len(io_df)} steps have reasoning tokens in output")
+    
+    @staticmethod
+    def save_retriever_io(
+        io_data: List[Dict],
+        output_path: str,
+        verbose: bool = True
+    ) -> None:
+        """
+        Save retriever I/O data to a pickle file.
+        
+        Args:
+            io_data: List of retriever I/O records
+            output_path: Output file path
+            verbose: Whether to print confirmation messages
+        """
+        if not io_data:
+            return
+        
+        output_path = Path(output_path)
+        io_df = pd.DataFrame(io_data)
+        io_df.to_pickle(output_path)
+        
+        if verbose:
+            print(f"\n✅ Saved {len(io_df)} retriever I/O records to {output_path}")
+            
+            # Print diagnostics
+            num_unique_prompts = io_df['prompt_index'].nunique() if 'prompt_index' in io_df.columns else 0
+            print(f"   Total retrieval calls: {len(io_df)}")
+            print(f"   Unique prompts: {num_unique_prompts}")
+            if num_unique_prompts > 0:
+                print(f"   Average retrievals per prompt: {len(io_df) / num_unique_prompts:.1f}")
+            
+            # Calculate average number of results
+            if 'num_results' in io_df.columns:
+                avg_results = io_df['num_results'].mean()
+                print(f"   Average results per retrieval: {avg_results:.1f}")
+    
+    @staticmethod
+    def save_reranker_io(
+        io_data: List[Dict],
+        output_path: str,
+        verbose: bool = True
+    ) -> None:
+        """
+        Save reranker I/O data to a pickle file.
+        
+        Args:
+            io_data: List of reranker I/O records
+            output_path: Output file path
+            verbose: Whether to print confirmation messages
+        """
+        if not io_data:
+            return
+        
+        output_path = Path(output_path)
+        io_df = pd.DataFrame(io_data)
+        io_df.to_pickle(output_path)
+        
+        if verbose:
+            print(f"\n✅ Saved {len(io_df)} reranker I/O records to {output_path}")
+            
+            # Print diagnostics
+            num_unique_prompts = io_df['prompt_index'].nunique() if 'prompt_index' in io_df.columns else 0
+            print(f"   Total reranking calls: {len(io_df)}")
+            print(f"   Unique prompts: {num_unique_prompts}")
+            if num_unique_prompts > 0:
+                print(f"   Average rerankings per prompt: {len(io_df) / num_unique_prompts:.1f}")
+            
+            # Calculate top-p filtering statistics
+            if 'top_p' in io_df.columns and 'num_filtered_by_top_p' in io_df.columns:
+                has_top_p = io_df['top_p'].notna().sum()
+                if has_top_p > 0:
+                    avg_filtered = io_df[io_df['top_p'].notna()]['num_filtered_by_top_p'].mean()
+                    print(f"   Top-p filtering: {has_top_p} calls, average {avg_filtered:.1f} passages filtered")
 

@@ -19,7 +19,9 @@ class RetrievalResult:
     rerank_time: float
     rewriter_time: float = 0.0
     generated_queries: List[str] = None
-    rewriter_io: List[Dict] = None  # For debugging
+    rewriter_io: List[Dict] = None  # For debugging query generation
+    retriever_io: List[Dict] = None  # For debugging retrieval
+    reranker_io: List[Dict] = None  # For debugging reranking
     num_chunks_kept: int = 0
     
     def __post_init__(self):
@@ -27,6 +29,10 @@ class RetrievalResult:
             self.generated_queries = []
         if self.rewriter_io is None:
             self.rewriter_io = []
+        if self.retriever_io is None:
+            self.retriever_io = []
+        if self.reranker_io is None:
+            self.reranker_io = []
         self.num_chunks_kept = len(self.reranked_results)
 
 
@@ -55,7 +61,9 @@ class RetrievalEngine:
         self,
         query: str,
         top_k: int = 10,
-        top_p: Optional[float] = None
+        top_p: Optional[float] = None,
+        save_retriever_io: bool = False,
+        save_reranker_io: bool = False
     ) -> RetrievalResult:
         """
         Perform retrieval and optional reranking for a single query.
@@ -64,14 +72,35 @@ class RetrievalEngine:
             query: Query string
             top_k: Number of results to retrieve
             top_p: If specified, use top-p filtering instead of top_k
+            save_retriever_io: Whether to save retriever input/output
+            save_reranker_io: Whether to save reranker input/output
         
         Returns:
             RetrievalResult object with results and timing
         """
+        retriever_io = []
+        reranker_io = []
+        
         # Retrieval
         tic = time.time()
         results = self.vector_store.lookup(query, k=top_k)
         lookup_time = time.time() - tic
+        
+        # Save retriever I/O if requested
+        if save_retriever_io:
+            retriever_io.append({
+                'query': query,
+                'top_k': top_k,
+                'num_results': len(results),
+                'retrieved_passages': [
+                    {
+                        'rank': i + 1,
+                        'passage': result.page_content,
+                        'metadata': result.metadata
+                    }
+                    for i, result in enumerate(results)
+                ]
+            })
         
         # Reranking (optional)
         rerank_time = 0.0
@@ -81,12 +110,35 @@ class RetrievalEngine:
             reranked_results = self.vector_store.rerank(query, top_k_passages)
             rerank_time = time.time() - tic
             
+            # Save reranker I/O if requested (before normalization)
+            if save_reranker_io:
+                reranker_io.append({
+                    'query': query,
+                    'input_passages': top_k_passages,
+                    'output_before_normalization': [
+                        {'passage': passage, 'score': score}
+                        for passage, score in reranked_results
+                    ]
+                })
+            
             # Normalize scores to probabilities (softmax)
             reranked_results = self._normalize_scores(reranked_results)
             
+            # Save normalized results in reranker I/O
+            if save_reranker_io and reranker_io:
+                reranker_io[-1]['output_after_normalization'] = [
+                    {'passage': passage, 'probability': prob}
+                    for passage, prob in reranked_results
+                ]
+            
             # Apply top-p filtering if specified
             if top_p is not None:
+                before_top_p = len(reranked_results)
                 reranked_results = self._apply_top_p_filtering(reranked_results, top_p)
+                if save_reranker_io and reranker_io:
+                    reranker_io[-1]['top_p'] = top_p
+                    reranker_io[-1]['num_kept_after_top_p'] = len(reranked_results)
+                    reranker_io[-1]['num_filtered_by_top_p'] = before_top_p - len(reranked_results)
         else:
             # No reranking - return in original retrieval order with uniform scores
             passages = [result.page_content for result in results]
@@ -102,7 +154,9 @@ class RetrievalEngine:
             raw_results=results,
             reranked_results=reranked_results,
             lookup_time=lookup_time,
-            rerank_time=rerank_time
+            rerank_time=rerank_time,
+            retriever_io=retriever_io,
+            reranker_io=reranker_io
         )
     
     def retrieve_with_rewriter(
@@ -113,23 +167,33 @@ class RetrievalEngine:
         num_rewriter_steps: int = 1,
         top_k: int = 10,
         top_p: Optional[float] = None,
-        save_io: bool = False
+        save_rewriter_io: bool = False,
+        save_retriever_io: bool = False,
+        save_reranker_io: bool = False
     ) -> RetrievalResult:
         """
-        Perform rewriter-based retrieval: generate multiple queries, then retrieve and rerank.
-        Can repeat this process multiple times (num_rewriter_steps).
+        Perform rewriter-based retrieval with iterative refinement.
+        
+        For each step:
+        1. Generate queries (using context from previous steps if available)
+        2. Retrieve and rerank passages for each query
+        3. Update context with retrieved passages for next step
+        
+        Finally, deduplicate and filter all results.
         
         Args:
             user_question: Original user question
             rewriter: QueryRewriter instance for query generation
             num_rewriter_queries: Number of queries to generate per step
-            num_rewriter_steps: Number of times to repeat rewrite->retrieve
+            num_rewriter_steps: Number of query generation calls (multiplies total queries)
             top_k: Number of results to retrieve per query
             top_p: If specified, use top-p filtering
-            save_io: Whether to save rewriter input/output for debugging
+            save_rewriter_io: Whether to save rewriter input/output for debugging
+            save_retriever_io: Whether to save retriever input/output for debugging
+            save_reranker_io: Whether to save reranker input/output for debugging
         
         Returns:
-            RetrievalResult with aggregated results from all steps
+            RetrievalResult with aggregated results from all generated queries
         """
         # Initialize tracking variables
         all_results = []
@@ -138,18 +202,20 @@ class RetrievalEngine:
         total_rerank_time = 0.0
         total_rewriter_time = 0.0
         all_generated_queries = []
-        rewriter_io_list = [] if save_io else []
+        rewriter_io_list = [] if save_rewriter_io else []
+        retriever_io_list = [] if save_retriever_io else []
+        reranker_io_list = [] if save_reranker_io else []
         accumulated_context = "None yet - this is the first retrieval step."
         
-        # Repeat rewrite->retrieve sequence for num_rewriter_steps
+        # Iterative: For each step, generate queries -> retrieve -> update context
         for step in range(num_rewriter_steps):
             if self.verbose:
-                print(f"  === Rewriter Step {step+1}/{num_rewriter_steps} ===")
-                print(f"  Generating {num_rewriter_queries} queries with rewriter...")
+                print(f"  === Step {step+1}/{num_rewriter_steps} ===")
+                print(f"  Generating {num_rewriter_queries} queries...")
             
-            # Step 1: Generate queries using rewriter (with accumulated context from previous steps)
+            # PHASE 1: Generate queries for this step (using accumulated context)
             tic = time.time()
-            if save_io:
+            if save_rewriter_io:
                 step_queries, rewriter_input, rewriter_output = rewriter.generate_queries(
                     user_question=user_question,
                     k=num_rewriter_queries,
@@ -175,36 +241,61 @@ class RetrievalEngine:
             all_generated_queries.extend(step_queries)
             
             if self.verbose:
-                print(f"  Generated queries in {rewriter_time:.3f}s:")
+                print(f"  Generated {len(step_queries)} queries in {rewriter_time:.3f}s")
                 for i, q in enumerate(step_queries, 1):
                     print(f"    {i}. {q}")
             
-            # Step 2: Retrieve for each generated query in this step
+            # PHASE 2: Retrieve and rerank for each generated query in this step
+            if self.verbose:
+                print(f"  Retrieving for {len(step_queries)} queries...")
+            
             step_results = []
-            for query in step_queries:
-                result = self.retrieve(query=query, top_k=top_k, top_p=top_p)
+            step_raw_results = []
+            for i, query in enumerate(step_queries, 1):
+                if self.verbose:
+                    print(f"    [{i}/{len(step_queries)}] Retrieving: {query[:60]}...")
+                
+                # Retrieve and rerank for this query
+                result = self.retrieve(
+                    query=query,
+                    top_k=top_k,
+                    top_p=top_p,
+                    save_retriever_io=save_retriever_io,
+                    save_reranker_io=save_reranker_io
+                )
                 all_results.extend(result.raw_results)
                 all_reranked_results.extend(result.reranked_results)
                 step_results.extend(result.reranked_results)
+                step_raw_results.extend(result.raw_results)
                 total_lookup_time += result.lookup_time
                 total_rerank_time += result.rerank_time
+                
+                # Collect retriever I/O
+                if save_retriever_io and result.retriever_io:
+                    retriever_io_list.extend(result.retriever_io)
+                
+                # Collect reranker I/O
+                if save_reranker_io and result.reranker_io:
+                    reranker_io_list.extend(result.reranker_io)
+                
+                if self.verbose:
+                    print(f"      → {len(result.reranked_results)} passages")
             
-            if self.verbose:
-                print(f"  Step {step+1} retrieved {len(step_queries) * top_k} passages")
-            
-            # Step 3: Update accumulated context for next step
-            # Deduplicate step results and use ALL top-p filtered passages as context
+            # PHASE 3: Update accumulated context for next step
             if step < num_rewriter_steps - 1:  # Don't need to update on last step
-                # Deduplicate passages from this step (multiple queries may return same passage)
-                step_raw_results = []  # Placeholder for deduplication
+                # Deduplicate passages from this step
                 deduplicated_step_results = self._deduplicate_results(step_results, step_raw_results)
                 
-                # Use ALL deduplicated, top-p filtered results as context
+                # Use deduplicated, top-p filtered results as context for next step
                 accumulated_context = self._summarize_passages_for_context(deduplicated_step_results)
                 if self.verbose:
-                    print(f"  Updated context: {len(step_results)} passages → {len(deduplicated_step_results)} unique passages for next step")
+                    print(f"  Step {step+1} retrieved {len(step_results)} passages → {len(deduplicated_step_results)} unique")
+                    print(f"  Updated context for next step with {len(deduplicated_step_results)} passages")
         
-        # Step 3: Deduplicate and re-rank all retrieved passages across all steps
+        # PHASE 3: Deduplicate and filter all retrieved passages
+        if self.verbose:
+            print(f"\n  === Deduplication & Filtering Phase ===")
+        
         deduplicated_results = self._deduplicate_results(all_reranked_results, all_results)
         
         # Apply top-p filtering to deduplicated results if specified
@@ -219,12 +310,13 @@ class RetrievalEngine:
             deduplicated_results = deduplicated_results[:num_to_keep]
         
         if self.verbose:
-            print(f"  Retrieved {len(all_reranked_results)} total passages across {num_rewriter_steps} steps")
-            print(f"  Unique chunks after deduplication: {len(deduplicated_results)}")
+            print(f"  Total passages retrieved: {len(all_reranked_results)}")
+            print(f"  Unique passages after deduplication: {len(deduplicated_results)}")
             if all_reranked_results:
                 dedup_ratio = (len(all_reranked_results) - len(deduplicated_results)) / len(all_reranked_results) * 100
-                print(f"  Deduplication: removed {len(all_reranked_results) - len(deduplicated_results)} duplicates ({dedup_ratio:.1f}%)")
-            print(f"  Final passages after top-p filtering: {len(deduplicated_results)}")
+                print(f"  Deduplication removed {len(all_reranked_results) - len(deduplicated_results)} duplicates ({dedup_ratio:.1f}%)")
+            if top_p:
+                print(f"  Final passages after top-p={top_p} filtering: {len(deduplicated_results)}")
         
         return RetrievalResult(
             raw_results=all_results,
@@ -233,7 +325,9 @@ class RetrievalEngine:
             rerank_time=total_rerank_time,
             rewriter_time=total_rewriter_time,
             generated_queries=all_generated_queries,
-            rewriter_io=rewriter_io_list
+            rewriter_io=rewriter_io_list,
+            retriever_io=retriever_io_list,
+            reranker_io=reranker_io_list
         )
     
     def _summarize_passages_for_context(
