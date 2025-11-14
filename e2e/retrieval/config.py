@@ -1,7 +1,7 @@
 """
 Configuration dataclasses for the retrieval pipeline.
 
-Provides type-safe configuration with automatic validation, replacing 
+Provides type-safe configuration with automatic validation, replacing
 dictionary-based config with proper dataclasses.
 """
 
@@ -18,28 +18,33 @@ class DataConfig:
     tsv_path: Optional[str] = None
     dataset_split: str = "test"
     num_prompts: Optional[int] = None
-    passage_count: Optional[int] = None  # For limiting passages during ingestion
-    
+    # For limiting passages during ingestion
+    passage_count: Optional[int] = None
+
     def validate(self, check_files: bool = False):
         """
         Validate data configuration.
-        
+
         Args:
             check_files: If True, check if files exist on filesystem.
                         Set to False for testing or when files will be created later.
         """
         if not self.vector_store and not self.passages:
-            raise ValueError("Must specify either 'vector_store' or 'passages'")
-        
+            raise ValueError(
+                "Must specify either 'vector_store' or 'passages'")
+
         if check_files:
             if self.vector_store and not Path(self.vector_store).exists():
-                raise FileNotFoundError(f"Vector store not found: {self.vector_store}")
-            
+                raise FileNotFoundError(
+                    f"Vector store not found: {self.vector_store}")
+
             if self.passages and not Path(self.passages).exists():
-                raise FileNotFoundError(f"Passages file not found: {self.passages}")
-        
+                raise FileNotFoundError(
+                    f"Passages file not found: {self.passages}")
+
         if self.num_prompts is not None and self.num_prompts <= 0:
-            raise ValueError(f"num_prompts must be positive, got {self.num_prompts}")
+            raise ValueError(
+                f"num_prompts must be positive, got {self.num_prompts}")
 
 
 @dataclass
@@ -47,7 +52,7 @@ class RetrievalConfig:
     """Retrieval configuration."""
     model: str = "intfloat/e5-base-v2"
     top_k: int = 20
-    
+
     def validate(self):
         """Validate retrieval configuration."""
         if self.top_k <= 0:
@@ -60,7 +65,7 @@ class RerankerConfig:
     enabled: bool = True
     model: str = "colbert-ir/colbertv2.0"
     top_p: Optional[float] = None
-    
+
     def validate(self):
         """Validate reranker configuration."""
         if self.top_p is not None:
@@ -81,7 +86,7 @@ class RewriterConfig:
     temperature: float = 0.7
     max_tokens: int = 500
     api_key: str = "EMPTY"
-    
+
     def validate(self):
         """Validate rewriter configuration."""
         if self.enabled:
@@ -89,18 +94,21 @@ class RewriterConfig:
                 raise ValueError("Rewriter requires 'endpoint' when enabled")
             if not self.model:
                 raise ValueError("Rewriter requires 'model' when enabled")
-        
+
         if self.steps <= 0:
             raise ValueError(f"steps must be positive, got {self.steps}")
-        
+
         if self.queries_per_step <= 0:
-            raise ValueError(f"queries_per_step must be positive, got {self.queries_per_step}")
-        
+            raise ValueError(
+                f"queries_per_step must be positive, got {self.queries_per_step}")
+
         if not 0.0 <= self.temperature <= 2.0:
-            raise ValueError(f"temperature must be in [0, 2], got {self.temperature}")
-        
+            raise ValueError(
+                f"temperature must be in [0, 2], got {self.temperature}")
+
         if self.max_tokens <= 0:
-            raise ValueError(f"max_tokens must be positive, got {self.max_tokens}")
+            raise ValueError(
+                f"max_tokens must be positive, got {self.max_tokens}")
 
 
 @dataclass
@@ -125,15 +133,15 @@ class PipelineConfig:
     rewriter: RewriterConfig = field(default_factory=RewriterConfig)
     parallel: Optional[int] = None  # max_workers (None or 1 = sequential)
     output: OutputConfig = field(default_factory=OutputConfig)
-    
+
     @classmethod
     def from_dict(cls, config_dict: dict) -> 'PipelineConfig':
         """
         Create PipelineConfig from dictionary (YAML/JSON).
-        
+
         Args:
             config_dict: Configuration dictionary from YAML file
-            
+
         Returns:
             PipelineConfig instance
         """
@@ -144,21 +152,22 @@ class PipelineConfig:
         rewriter_dict = config_dict.get('rewriter', {})
         output_dict = config_dict.get('output', {})
         parallel_dict = config_dict.get('parallel', {})
-        
+
         return cls(
             data=DataConfig(**data_dict),
             device=config_dict.get('device'),
             retrieval=RetrievalConfig(**retrieval_dict),
             reranker=RerankerConfig(**reranker_dict),
             rewriter=RewriterConfig(**rewriter_dict),
-            parallel=parallel_dict.get('max_workers') if parallel_dict else None,
+            parallel=parallel_dict.get(
+                'max_workers') if parallel_dict else None,
             output=OutputConfig(**output_dict)
         )
-    
+
     def to_dict(self) -> dict:
         """
         Convert to dictionary for backward compatibility.
-        
+
         Returns:
             Dictionary representation matching old config format
         """
@@ -204,11 +213,11 @@ class PipelineConfig:
                 'verbose': self.output.verbose
             }
         }
-    
+
     def validate(self, check_files: bool = False):
         """
         Validate all configuration sections.
-        
+
         Args:
             check_files: If True, check if data files exist on filesystem.
         """
@@ -217,23 +226,22 @@ class PipelineConfig:
         self.reranker.validate()
         self.rewriter.validate()
         # output doesn't need validation
-    
+
     def apply_overrides(self, args) -> None:
         """
         Apply command-line argument overrides.
-        
+
         Args:
             args: Parsed argparse Namespace with override values
         """
         if hasattr(args, 'num_prompts') and args.num_prompts is not None:
             self.data.num_prompts = args.num_prompts
-        
+
         if hasattr(args, 'verbose') and args.verbose:
             self.output.verbose = True
-        
+
         if hasattr(args, 'output') and args.output:
             self.output.results = args.output
-        
+
         if hasattr(args, 'max_workers') and args.max_workers is not None:
             self.parallel = args.max_workers
-
