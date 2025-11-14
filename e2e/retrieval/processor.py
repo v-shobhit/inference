@@ -57,119 +57,139 @@ class BatchProcessor:
         """
         # Determine whether to use parallel processing
         use_parallel = self.max_workers is not None and self.max_workers > 1
-        
+
         if use_parallel:
             return self._process_prompts_parallel(prompts, config)
         else:
             return self._process_prompts_sequential(prompts, config)
-    
-    def _process_prompts_sequential(
-        self,
-        prompts: List[Dict[str, Any]],
-        config: Dict[str, Any]
-    ) -> tuple:
+
+    def _initialize_collectors(self, config: Dict[str, Any]) -> tuple:
         """
-        Process prompts sequentially (original implementation).
-        
-        Args:
-            prompts: List of prompt dictionaries
-            config: Configuration dictionary with retrieval parameters
+        Initialize result collectors and statistics tracking.
         
         Returns:
-            Tuple of (results_df, io_data_dict, stats_dict)
+            Tuple of (collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats_dict)
         """
         collector = ResultsCollector()
         all_rewriter_io = [] if config.get('rewriter_io') else None
         all_retriever_io = [] if config.get('retriever_io') else None
         all_reranker_io = [] if config.get('reranker_io') else None
         
-        # Statistics tracking
-        total_lookup_time = 0.0
-        total_rerank_time = 0.0
-        total_rewriter_time = 0.0
-        total_chunks_kept = 0
+        stats = {
+            'total_lookup_time': 0.0,
+            'total_rerank_time': 0.0,
+            'total_rewriter_time': 0.0,
+            'total_chunks_kept': 0,
+            'passages_before_rerank': [],
+            'passages_after_rerank': []
+        }
         
-        # Track passages per prompt for statistics
-        passages_before_rerank = []  # List of counts per prompt
-        passages_after_rerank = []   # List of counts per prompt
+        return collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats
+    
+    def _collect_result(
+        self,
+        prompt_data: Dict[str, Any],
+        retrieval_result: 'RetrievalResult',
+        collector: ResultsCollector,
+        all_rewriter_io: Optional[List],
+        all_retriever_io: Optional[List],
+        all_reranker_io: Optional[List],
+        stats: Dict[str, Any],
+        config: Dict[str, Any]
+    ) -> None:
+        """
+        Collect results from a single prompt processing.
         
-        # Process each prompt
-        for i, prompt_data in tqdm(enumerate(prompts), total=len(prompts), desc="Processing prompts", unit="prompt"):
-            prompt = prompt_data['prompt']
-            
-            if self.verbose:
-                tqdm.write(f"\n[{i+1}/{len(prompts)}] Processing: {prompt[:80]}...")
-            
-            # Perform retrieval
-            retrieval_result = self._process_single_prompt(prompt, config)
-            
-            # Collect rewriter I/O if enabled (one row per step)
-            if config.get('rewriter_io') and retrieval_result.rewriter_io:
-                for step_data in retrieval_result.rewriter_io:
-                    all_rewriter_io.append({
-                        'prompt_index': prompt_data['index'],
-                        'prompt': prompt,
-                        'step': step_data.get('step', None),
-                        'rewriter_input': step_data.get('rewriter_input', ''),
-                        'rewriter_output': step_data.get('rewriter_output', ''),
-                        'generated_queries': step_data.get('generated_queries', [])
-                    })
-            
-            # Collect retriever I/O if enabled
-            if config.get('retriever_io') and retrieval_result.retriever_io:
-                for retriever_data in retrieval_result.retriever_io:
-                    all_retriever_io.append({
-                        'prompt_index': prompt_data['index'],
-                        'prompt': prompt,
-                        'query': retriever_data.get('query', ''),
-                        'top_k': retriever_data.get('top_k'),
-                        'num_results': retriever_data.get('num_results'),
-                        'retrieved_passages': retriever_data.get('retrieved_passages', [])
-                    })
-            
-            # Collect reranker I/O if enabled
-            if config.get('reranker_io') and retrieval_result.reranker_io:
-                for reranker_data in retrieval_result.reranker_io:
-                    all_reranker_io.append({
-                        'prompt_index': prompt_data['index'],
-                        'prompt': prompt,
-                        'query': reranker_data.get('query', ''),
-                        'input_passages': reranker_data.get('input_passages', []),
-                        'output_before_normalization': reranker_data.get('output_before_normalization', []),
-                        'output_after_normalization': reranker_data.get('output_after_normalization', []),
-                        'top_p': reranker_data.get('top_p'),
-                        'num_kept_after_top_p': reranker_data.get('num_kept_after_top_p'),
-                        'num_filtered_by_top_p': reranker_data.get('num_filtered_by_top_p')
-                    })
-            
-            # Add to results collector
-            collector.add_result(
-                prompt_data=prompt_data,
-                retrieval_result=retrieval_result,
-                verbose=self.verbose
-            )
-            
-            # Update statistics
-            total_lookup_time += retrieval_result.lookup_time
-            total_rerank_time += retrieval_result.rerank_time
-            total_rewriter_time += retrieval_result.rewriter_time
-            total_chunks_kept += retrieval_result.num_chunks_kept
-            
-            # Track per-prompt passage counts
-            passages_before_rerank.append(len(retrieval_result.raw_results))
-            passages_after_rerank.append(len(retrieval_result.reranked_results))
-            
-            if self.verbose:
-                if retrieval_result.rewriter_time > 0:
-                    tqdm.write(f"  Rewriter: {retrieval_result.rewriter_time:.3f}s | "
-                              f"Lookup: {retrieval_result.lookup_time:.3f}s | "
-                              f"Rerank: {retrieval_result.rerank_time:.3f}s | "
-                              f"Chunks kept: {retrieval_result.num_chunks_kept}")
-                else:
-                    tqdm.write(f"  Lookup: {retrieval_result.lookup_time:.3f}s | "
-                              f"Rerank: {retrieval_result.rerank_time:.3f}s | "
-                              f"Chunks kept: {retrieval_result.num_chunks_kept}")
+        This method updates the collector, I/O lists, and statistics in place.
+        """
+        prompt = prompt_data['prompt']
         
+        # Collect rewriter I/O if enabled
+        if config.get('rewriter_io') and retrieval_result.rewriter_io:
+            for step_data in retrieval_result.rewriter_io:
+                all_rewriter_io.append({
+                    'prompt_index': prompt_data['index'],
+                    'prompt': prompt,
+                    'step': step_data.get('step', None),
+                    'rewriter_input': step_data.get('rewriter_input', ''),
+                    'rewriter_output': step_data.get('rewriter_output', ''),
+                    'generated_queries': step_data.get('generated_queries', [])
+                })
+        
+        # Collect retriever I/O if enabled
+        if config.get('retriever_io') and retrieval_result.retriever_io:
+            for retriever_data in retrieval_result.retriever_io:
+                all_retriever_io.append({
+                    'prompt_index': prompt_data['index'],
+                    'prompt': prompt,
+                    'query': retriever_data.get('query', ''),
+                    'top_k': retriever_data.get('top_k'),
+                    'num_results': retriever_data.get('num_results'),
+                    'retrieved_passages': retriever_data.get('retrieved_passages', [])
+                })
+        
+        # Collect reranker I/O if enabled
+        if config.get('reranker_io') and retrieval_result.reranker_io:
+            for reranker_data in retrieval_result.reranker_io:
+                all_reranker_io.append({
+                    'prompt_index': prompt_data['index'],
+                    'prompt': prompt,
+                    'query': reranker_data.get('query', ''),
+                    'input_passages': reranker_data.get('input_passages', []),
+                    'output_before_normalization': reranker_data.get('output_before_normalization', []),
+                    'output_after_normalization': reranker_data.get('output_after_normalization', []),
+                    'top_p': reranker_data.get('top_p'),
+                    'num_kept_after_top_p': reranker_data.get('num_kept_after_top_p'),
+                    'num_filtered_by_top_p': reranker_data.get('num_filtered_by_top_p')
+                })
+        
+        # Add to results collector
+        collector.add_result(
+            prompt_data=prompt_data,
+            retrieval_result=retrieval_result,
+            verbose=self.verbose
+        )
+        
+        # Update statistics
+        stats['total_lookup_time'] += retrieval_result.lookup_time
+        stats['total_rerank_time'] += retrieval_result.rerank_time
+        stats['total_rewriter_time'] += retrieval_result.rewriter_time
+        stats['total_chunks_kept'] += retrieval_result.num_chunks_kept
+        
+        # Track per-prompt passage counts
+        stats['passages_before_rerank'].append(len(retrieval_result.raw_results))
+        stats['passages_after_rerank'].append(len(retrieval_result.reranked_results))
+    
+    def _log_retrieval_result(self, retrieval_result: 'RetrievalResult') -> None:
+        """Log verbose output for a retrieval result."""
+        if not self.verbose:
+            return
+        
+        if retrieval_result.rewriter_time > 0:
+            tqdm.write(f"  Rewriter: {retrieval_result.rewriter_time:.3f}s | "
+                      f"Lookup: {retrieval_result.lookup_time:.3f}s | "
+                      f"Rerank: {retrieval_result.rerank_time:.3f}s | "
+                      f"Chunks kept: {retrieval_result.num_chunks_kept}")
+        else:
+            tqdm.write(f"  Lookup: {retrieval_result.lookup_time:.3f}s | "
+                      f"Rerank: {retrieval_result.rerank_time:.3f}s | "
+                      f"Chunks kept: {retrieval_result.num_chunks_kept}")
+    
+    def _finalize_results(
+        self,
+        collector: ResultsCollector,
+        all_rewriter_io: Optional[List],
+        all_retriever_io: Optional[List],
+        all_reranker_io: Optional[List],
+        stats: Dict[str, Any],
+        num_prompts: int
+    ) -> tuple:
+        """
+        Finalize results by creating DataFrame and computing final statistics.
+        
+        Returns:
+            Tuple of (results_df, io_data_dict, final_stats_dict)
+        """
         # Create DataFrame
         df = collector.to_dataframe()
         
@@ -188,20 +208,19 @@ class BatchProcessor:
                 'max': float(np.max(arr))
             }
         
-        # Compile statistics
-        stats = {
-            'num_prompts': len(prompts),
-            'total_lookup_time': total_lookup_time,
-            'total_rerank_time': total_rerank_time,
-            'total_rewriter_time': total_rewriter_time,
-            'total_chunks_kept': total_chunks_kept,
-            'avg_lookup_time': total_lookup_time / len(prompts),
-            'avg_rerank_time': total_rerank_time / len(prompts),
-            'avg_rewriter_time': total_rewriter_time / len(prompts) if total_rewriter_time > 0 else 0,
-            'avg_chunks_kept': total_chunks_kept / len(prompts) if prompts else 0,
-            # Passage count statistics
-            'passages_before_rerank': calculate_stats(passages_before_rerank),
-            'passages_after_rerank': calculate_stats(passages_after_rerank)
+        # Compile final statistics
+        final_stats = {
+            'num_prompts': num_prompts,
+            'total_lookup_time': stats['total_lookup_time'],
+            'total_rerank_time': stats['total_rerank_time'],
+            'total_rewriter_time': stats['total_rewriter_time'],
+            'total_chunks_kept': stats['total_chunks_kept'],
+            'avg_lookup_time': stats['total_lookup_time'] / num_prompts if num_prompts else 0,
+            'avg_rerank_time': stats['total_rerank_time'] / num_prompts if num_prompts else 0,
+            'avg_rewriter_time': stats['total_rewriter_time'] / num_prompts if stats['total_rewriter_time'] > 0 else 0,
+            'avg_chunks_kept': stats['total_chunks_kept'] / num_prompts if num_prompts else 0,
+            'passages_before_rerank': calculate_stats(stats['passages_before_rerank']),
+            'passages_after_rerank': calculate_stats(stats['passages_after_rerank'])
         }
         
         # Create I/O data dictionary
@@ -211,7 +230,52 @@ class BatchProcessor:
             'reranker': all_reranker_io
         }
         
-        return df, io_data, stats
+        return df, io_data, final_stats
+    
+    def _process_prompts_sequential(
+        self,
+        prompts: List[Dict[str, Any]],
+        config: Dict[str, Any]
+    ) -> tuple:
+        """
+        Process prompts sequentially (original implementation).
+        
+        Args:
+            prompts: List of prompt dictionaries
+            config: Configuration dictionary with retrieval parameters
+        
+        Returns:
+            Tuple of (results_df, io_data_dict, stats_dict)
+        """
+        # Initialize collectors and statistics
+        collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats = \
+            self._initialize_collectors(config)
+        
+        # Process each prompt
+        for i, prompt_data in tqdm(enumerate(prompts), total=len(prompts), desc="Processing prompts", unit="prompt"):
+            prompt = prompt_data['prompt']
+            
+            if self.verbose:
+                tqdm.write(f"\n[{i+1}/{len(prompts)}] Processing: {prompt[:80]}...")
+            
+            # Perform retrieval
+            retrieval_result = self._process_single_prompt(prompt, config)
+            
+            # Collect results
+            self._collect_result(
+                prompt_data, retrieval_result, collector,
+                all_rewriter_io, all_retriever_io, all_reranker_io,
+                stats, config
+            )
+            
+            # Log verbose output
+            self._log_retrieval_result(retrieval_result)
+        
+        # Finalize and return results
+        return self._finalize_results(
+            collector, all_rewriter_io, all_retriever_io, all_reranker_io,
+            stats, len(prompts)
+        )
     
     def _process_prompts_parallel(
         self,
@@ -228,20 +292,9 @@ class BatchProcessor:
         Returns:
             Tuple of (results_df, io_data_dict, stats_dict)
         """
-        collector = ResultsCollector()
-        all_rewriter_io = [] if config.get('rewriter_io') else None
-        all_retriever_io = [] if config.get('retriever_io') else None
-        all_reranker_io = [] if config.get('reranker_io') else None
-        
-        # Statistics tracking
-        total_lookup_time = 0.0
-        total_rerank_time = 0.0
-        total_rewriter_time = 0.0
-        total_chunks_kept = 0
-        
-        # Track passages per prompt for statistics
-        passages_before_rerank = []  # List of counts per prompt
-        passages_after_rerank = []   # List of counts per prompt
+        # Initialize collectors and statistics
+        collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats = \
+            self._initialize_collectors(config)
         
         # Helper function to process a single prompt and return all data
         def process_prompt_wrapper(prompt_data):
@@ -260,7 +313,7 @@ class BatchProcessor:
             
             # Process results as they complete
             completed_count = 0
-            with tqdm(total=len(prompts), desc="Processing prompts (parallel)", unit="prompt") as pbar:
+            with tqdm(total=len(prompts), desc="Processing prompts", unit="prompt") as pbar:
                 for future in as_completed(futures):
                     prompt_idx = futures[future]
                     try:
@@ -272,72 +325,14 @@ class BatchProcessor:
                         
                         # Thread-safe collection of results
                         with self.lock:
-                            # Collect rewriter I/O if enabled
-                            if config.get('rewriter_io') and retrieval_result.rewriter_io:
-                                for step_data in retrieval_result.rewriter_io:
-                                    all_rewriter_io.append({
-                                        'prompt_index': prompt_data['index'],
-                                        'prompt': prompt,
-                                        'step': step_data.get('step', None),
-                                        'rewriter_input': step_data.get('rewriter_input', ''),
-                                        'rewriter_output': step_data.get('rewriter_output', ''),
-                                        'generated_queries': step_data.get('generated_queries', [])
-                                    })
-                            
-                            # Collect retriever I/O if enabled
-                            if config.get('retriever_io') and retrieval_result.retriever_io:
-                                for retriever_data in retrieval_result.retriever_io:
-                                    all_retriever_io.append({
-                                        'prompt_index': prompt_data['index'],
-                                        'prompt': prompt,
-                                        'query': retriever_data.get('query', ''),
-                                        'top_k': retriever_data.get('top_k'),
-                                        'num_results': retriever_data.get('num_results'),
-                                        'retrieved_passages': retriever_data.get('retrieved_passages', [])
-                                    })
-                            
-                            # Collect reranker I/O if enabled
-                            if config.get('reranker_io') and retrieval_result.reranker_io:
-                                for reranker_data in retrieval_result.reranker_io:
-                                    all_reranker_io.append({
-                                        'prompt_index': prompt_data['index'],
-                                        'prompt': prompt,
-                                        'query': reranker_data.get('query', ''),
-                                        'input_passages': reranker_data.get('input_passages', []),
-                                        'output_before_normalization': reranker_data.get('output_before_normalization', []),
-                                        'output_after_normalization': reranker_data.get('output_after_normalization', []),
-                                        'top_p': reranker_data.get('top_p'),
-                                        'num_kept_after_top_p': reranker_data.get('num_kept_after_top_p'),
-                                        'num_filtered_by_top_p': reranker_data.get('num_filtered_by_top_p')
-                                    })
-                            
-                            # Add to results collector
-                            collector.add_result(
-                                prompt_data=prompt_data,
-                                retrieval_result=retrieval_result,
-                                verbose=False  # Disable verbose in collector to avoid race conditions
+                            self._collect_result(
+                                prompt_data, retrieval_result, collector,
+                                all_rewriter_io, all_retriever_io, all_reranker_io,
+                                stats, config
                             )
-                            
-                            # Update statistics
-                            total_lookup_time += retrieval_result.lookup_time
-                            total_rerank_time += retrieval_result.rerank_time
-                            total_rewriter_time += retrieval_result.rewriter_time
-                            total_chunks_kept += retrieval_result.num_chunks_kept
-                            
-                            # Track per-prompt passage counts
-                            passages_before_rerank.append(len(retrieval_result.raw_results))
-                            passages_after_rerank.append(len(retrieval_result.reranked_results))
                         
-                        if self.verbose:
-                            if retrieval_result.rewriter_time > 0:
-                                tqdm.write(f"  Rewriter: {retrieval_result.rewriter_time:.3f}s | "
-                                          f"Lookup: {retrieval_result.lookup_time:.3f}s | "
-                                          f"Rerank: {retrieval_result.rerank_time:.3f}s | "
-                                          f"Chunks kept: {retrieval_result.num_chunks_kept}")
-                            else:
-                                tqdm.write(f"  Lookup: {retrieval_result.lookup_time:.3f}s | "
-                                          f"Rerank: {retrieval_result.rerank_time:.3f}s | "
-                                          f"Chunks kept: {retrieval_result.num_chunks_kept}")
+                        # Log verbose output (outside lock)
+                        self._log_retrieval_result(retrieval_result)
                         
                         completed_count += 1
                         pbar.update(1)
@@ -346,48 +341,11 @@ class BatchProcessor:
                         tqdm.write(f"Error processing prompt {prompt_idx}: {str(e)}")
                         raise
         
-        # Create DataFrame
-        df = collector.to_dataframe()
-        
-        # Calculate passage statistics
-        def calculate_stats(values):
-            """Calculate mean, quartiles, min, max for a list of values."""
-            if not values:
-                return {}
-            arr = np.array(values)
-            return {
-                'mean': float(np.mean(arr)),
-                'min': float(np.min(arr)),
-                'q1': float(np.percentile(arr, 25)),
-                'median': float(np.percentile(arr, 50)),
-                'q3': float(np.percentile(arr, 75)),
-                'max': float(np.max(arr))
-            }
-        
-        # Compile statistics
-        stats = {
-            'num_prompts': len(prompts),
-            'total_lookup_time': total_lookup_time,
-            'total_rerank_time': total_rerank_time,
-            'total_rewriter_time': total_rewriter_time,
-            'total_chunks_kept': total_chunks_kept,
-            'avg_lookup_time': total_lookup_time / len(prompts),
-            'avg_rerank_time': total_rerank_time / len(prompts),
-            'avg_rewriter_time': total_rewriter_time / len(prompts) if total_rewriter_time > 0 else 0,
-            'avg_chunks_kept': total_chunks_kept / len(prompts) if prompts else 0,
-            # Passage count statistics
-            'passages_before_rerank': calculate_stats(passages_before_rerank),
-            'passages_after_rerank': calculate_stats(passages_after_rerank)
-        }
-        
-        # Create I/O data dictionary
-        io_data = {
-            'rewriter': all_rewriter_io,
-            'retriever': all_retriever_io,
-            'reranker': all_reranker_io
-        }
-        
-        return df, io_data, stats
+        # Finalize and return results
+        return self._finalize_results(
+            collector, all_rewriter_io, all_retriever_io, all_reranker_io,
+            stats, len(prompts)
+        )
     
     def _process_single_prompt(
         self,
