@@ -1,0 +1,79 @@
+# FRAMES Retrieval Pipeline Configuration
+# Example configuration file for run_frames_retrieval.py
+
+data:
+  # Vector store (choose ONE: vector_store OR passages)
+  vector_store: "data/wiki_articles_frames/vector_store_passages.pkl"  
+
+  # OR: Passages JSON file (if not using pre-built vector store)
+  # passages: "data/wiki_articles_frames/passages.json"
+  # passages_count: 1000  # Optional: limit number of passages to ingest
+
+  # Path to TSV file for prompts and ground_truth_articles
+  tsv_path: "data/frames-benchmark/test.tsv"  
+
+  # Optional: Limit number of prompts to process
+  num_prompts: 100
+
+# Device for inference of retriever and reranker (cuda/cpu)
+# Auto-detects if not specified
+device: "cuda"
+
+retrieval:
+  # Retrieval model
+  model: "intfloat/e5-base-v2"
+  
+  # Number of passages to retrieve per query
+  top_k: 20
+
+reranker:
+  # Enable/disable reranking
+  enabled: true
+  
+  # Reranker model
+  model: "colbert-ir/colbertv2.0"
+  
+  # Top-p (nucleus) filtering - keeps most probable passages
+  # Keeps chunks until cumulative probability >= top_p
+  # Note: top_p=1.0 means keep all passages (makes reranking less useful)
+  top_p: 0.4
+
+rewriter:
+  # Enable/disable rewriter
+  enabled: true
+  
+  # LLM endpoint (OpenAI-compatible API)
+  endpoint: "http://localhost:30001/v1"
+  
+  # Model name
+  model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  
+  # Number of rewriter steps
+  # Each step: generate queries → retrieve → accumulate context
+  steps: 5
+  
+  # Number of queries to generate per step
+  queries_per_step: 5
+  
+  # Generation parameters
+  temperature: 0.7
+  max_tokens: 1024
+  
+  # Optional: API key (default: "EMPTY" for local endpoints)
+  # api_key: "EMPTY"
+
+
+output:
+  # Main results file
+  results: "data/wiki_articles_frames/retrieval_results.pkl"
+  
+  # Optional: Save rewriter input/output for debugging
+  rewriter_io: "data/wiki_articles_frames/rewriter_io.pkl"
+  
+  # Additional output formats
+  save_json: false
+  save_csv: false
+  
+  # Verbose output
+  verbose: false
+
