@@ -1,5 +1,5 @@
 """
-Passage creation and management from Wikipedia articles.
+Passage creation and management from text articles.
 """
 
 import json

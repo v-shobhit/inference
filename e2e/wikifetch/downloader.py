@@ -5,6 +5,7 @@ Wikipedia article download orchestration.
 import json
 import re
 import time
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, List, Tuple, Optional
 from multiprocessing import Pool
@@ -56,13 +57,15 @@ class WikipediaDownloader:
             print(f"Workers: {self.workers}")
         
         # Prepare arguments for multiprocessing
-        process_args = [(url, output_dir, self.extractor) for url in urls]
+        # Don't pass extractor (has unpicklable session), pass language instead
+        process_args = [(url, output_dir, self.extractor.language) for url in urls]
         
         # Process URLs in parallel with progress bar
         start_time = time.time()
         
         results = []
         failed_urls = []
+        skipped_count = 0
         
         with Pool(processes=self.workers) as pool:
             with tqdm(total=len(urls), desc="Downloading articles", unit="article", disable=not verbose) as pbar:
@@ -74,6 +77,7 @@ class WikipediaDownloader:
                     if success:
                         if message == "Already exists":
                             pbar.set_description(f"⊙ Skipped (exists)")
+                            skipped_count += 1
                         else:
                             pbar.set_description(f"✓ Downloaded")
                     else:
@@ -95,6 +99,8 @@ class WikipediaDownloader:
         if verbose:
             print(f"\n=== DOWNLOAD COMPLETE ===")
             print(f"Successful: {successful}")
+            if skipped_count > 0:
+                print(f"Skipped (already exist): {skipped_count}")
             print(f"Failed: {failed}")
             print(f"Total time: {duration:.2f} seconds")
             print(f"Average time per URL: {duration/len(urls):.2f} seconds")
@@ -111,6 +117,7 @@ class WikipediaDownloader:
         return {
             'successful': successful,
             'failed': failed,
+            'skipped': skipped_count,
             'total': len(urls),
             'duration': duration,
             'avg_time_per_url': duration / len(urls) if urls else 0,
@@ -124,28 +131,36 @@ def _process_single_url_worker(args_tuple) -> Tuple[bool, str, Optional[Dict], s
     Designed for multiprocessing.
     
     Args:
-        args_tuple: (url, output_dir, extractor)
+        args_tuple: (url, output_dir, language)
     
     Returns:
         Tuple of (success, url, content_dict, error_message)
     """
-    url, output_dir, extractor = args_tuple
+    url, output_dir, language = args_tuple
+    
+    # Create extractor instance in this worker (avoids pickling issues)
+    from .extractor import WikipediaExtractor
+    extractor = WikipediaExtractor(language=language)
     
     # Create safe filename from URL
     title = extractor.extract_article_title_from_url(url)
     if not title:
         return False, url, None, "Could not extract title from URL"
     
-    # Create safe filename
+    # Create safe filename with URL hash to prevent collisions
     safe_filename = re.sub(r'[^\w\s-]', '_', title)
     safe_filename = re.sub(r'[-\s]+', '_', safe_filename)
-    if len(safe_filename) > 200:
-        safe_filename = safe_filename[:200]
+    if len(safe_filename) > 190:  # Leave room for hash suffix
+        safe_filename = safe_filename[:190]
     
-    output_path = output_dir / f"{safe_filename}.txt"
-    json_path = output_dir / f"{safe_filename}.json"
+    # Add short URL hash to make filename unique (prevents race conditions in parallel processing)
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+    unique_filename = f"{safe_filename}_{url_hash}"
     
-    # Skip if file already exists
+    output_path = output_dir / f"{unique_filename}.txt"
+    json_path = output_dir / f"{unique_filename}.json"
+    
+    # Check if already exists (same URL will have same hash)
     if output_path.exists() and json_path.exists():
         return True, url, None, "Already exists"
     

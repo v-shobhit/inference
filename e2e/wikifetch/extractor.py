@@ -7,6 +7,8 @@ import time
 import urllib.parse
 from typing import Optional, Dict, Any
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 class WikipediaExtractor:
@@ -29,12 +31,22 @@ class WikipediaExtractor:
         self.max_retries = max_retries
         self.api_url = f"https://{language}.wikipedia.org/w/api.php"
         
-        # Configure connection pooling to avoid overwhelming the network
+        # Configure connection pooling and retry strategy
         self.session = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(
+        
+        # Configure retry strategy: only retry on specific errors, not connection timeouts
+        retry_strategy = Retry(
+            total=3,
+            status_forcelist=[429, 500, 502, 503, 504],  # Only retry on these HTTP codes
+            allowed_methods=["GET"],  # Only retry GET requests
+            backoff_factor=1,  # Wait 1, 2, 4 seconds between retries
+            raise_on_status=False  # Don't raise exception, let our code handle it
+        )
+        
+        adapter = HTTPAdapter(
             pool_connections=10,
             pool_maxsize=10,
-            max_retries=3
+            max_retries=retry_strategy
         )
         self.session.mount('https://', adapter)
         self.session.mount('http://', adapter)

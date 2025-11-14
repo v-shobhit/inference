@@ -10,7 +10,7 @@ import time
 from typing import Optional
 from openai import OpenAI
 
-from vectordb import VectorDB
+from ingest import VectorDB
 from .config import PipelineConfig
 from .query_rewriter import QueryRewriter
 from .engine import RetrievalEngine

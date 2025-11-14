@@ -22,7 +22,7 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from vectordb.create import create_vector_store_from_passages
+from ingest import create_vector_store_from_passages
 
 
 def main():

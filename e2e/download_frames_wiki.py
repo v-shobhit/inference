@@ -27,7 +27,7 @@ from pathlib import Path
 
 # Import from our modular structure
 from retrieval import PromptLoader
-from wikipedia import (
+from wikifetch import (
     WikipediaExtractor,
     WikipediaDownloader,
     extract_wikipedia_urls
@@ -90,7 +90,7 @@ def main():
     # STEP 1: LOAD FRAMES DATASET
     # ===================================================================
     print("=" * 80)
-    print("STEP 1: LOADING FRAMES DATASET")
+    print("LOADING FRAMES DATASET")
     print("=" * 80)
 
     prompts = PromptLoader.load(
@@ -104,7 +104,7 @@ def main():
     # STEP 2: EXTRACT WIKIPEDIA URLs
     # ===================================================================
     print(f"\n{'=' * 80}")
-    print("STEP 2: EXTRACTING WIKIPEDIA URLs")
+    print("EXTRACTING WIKIPEDIA URLs")
     print("=" * 80)
 
     urls, excluded_urls = extract_wikipedia_urls(
@@ -128,7 +128,7 @@ def main():
     # STEP 3: DOWNLOAD WIKIPEDIA ARTICLES
     # ===================================================================
     print(f"\n{'=' * 80}")
-    print("STEP 3: DOWNLOADING WIKIPEDIA ARTICLES")
+    print("DOWNLOADING WIKIPEDIA ARTICLES")
     print("=" * 80)
 
     extractor = WikipediaExtractor(language='en')

@@ -6,7 +6,7 @@ import time
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass, field
-from vectordb import VectorDB
+from ingest import VectorDB
 from .query_rewriter import QueryRewriter
 
 

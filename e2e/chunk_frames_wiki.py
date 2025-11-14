@@ -38,7 +38,7 @@ from pathlib import Path
 from multiprocessing import cpu_count
 
 # Import from our modular structure
-from wikipedia import TextChunker, PassageBuilder
+from chunker import TextChunker, PassageBuilder
 
 
 def main():
