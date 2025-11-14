@@ -2,7 +2,7 @@
 Metrics calculation for retrieval evaluation.
 """
 
-from typing import Set, Dict, List
+from typing import Set, Dict, List, Tuple
 import pandas as pd
 
 
