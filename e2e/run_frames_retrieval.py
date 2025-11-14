@@ -71,9 +71,10 @@ from retrieval import (
     ResultsExporter,
     BatchProcessor
 )
+from retrieval.config import PipelineConfig
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str) -> PipelineConfig:
     """
     Load configuration from YAML file.
     
@@ -81,139 +82,91 @@ def load_config(config_path: str) -> Dict[str, Any]:
         config_path: Path to YAML configuration file
     
     Returns:
-        Configuration dictionary with sections: data, retrieval, reranker, rewriter, output
+        PipelineConfig instance with type-safe configuration
     """
     with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+        config_dict = yaml.safe_load(f)
     
-    # Set defaults for optional sections
-    if 'rewriter' not in config:
-        config['rewriter'] = {'enabled': False}
-    if 'output' not in config:
-        config['output'] = {}
+    # Create PipelineConfig from dictionary
+    config = PipelineConfig.from_dict(config_dict)
+    
+    # Validate configuration
+    config.validate()
     
     return config
 
 
-def validate_config(config: Dict[str, Any]) -> None:
-    """
-    Validate configuration and raise errors for missing required fields.
-    
-    Args:
-        config: Configuration dictionary
-    """
-    # Validate data section
-    if 'data' not in config:
-        raise ValueError("Config must have 'data' section")
-    
-    data = config['data']
-    if 'vector_store' not in data and 'passages' not in data:
-        raise ValueError("Config data section must have either 'vector_store' or 'passages'")
-    
-    # Validate retrieval section
-    if 'retrieval' not in config:
-        raise ValueError("Config must have 'retrieval' section")
-    
-    # Validate top_p in reranker section
-    reranker = config.get('reranker', {})
-    use_reranker = reranker.get('enabled', True)
-    top_p = reranker.get('top_p')
-    
-    if top_p is not None:
-        if not use_reranker:
-            raise ValueError("top_p requires reranker to be enabled")
-        if not (0 < top_p <= 1):
-            raise ValueError("top_p must be between 0 (exclusive) and 1 (inclusive)")
-    
-    # Validate rewriter section if enabled
-    rewriter = config.get('rewriter', {})
-    if rewriter.get('enabled', False):
-        if 'steps' not in rewriter or rewriter['steps'] < 1:
-            raise ValueError("rewriter.steps must be >= 1 when rewriter is enabled")
-        if 'endpoint' not in rewriter:
-            raise ValueError("rewriter.endpoint is required when rewriter is enabled")
-        if 'model' not in rewriter:
-            raise ValueError("rewriter.model is required when rewriter is enabled")
-
-
-def print_config_summary(config: Dict[str, Any]) -> None:
+def print_config_summary(config: PipelineConfig) -> None:
     """Print a summary of the loaded configuration."""
     print(f"\n{'='*80}")
     print("CONFIGURATION SUMMARY")
     print(f"{'='*80}")
     
     # Data section
-    data = config['data']
     print("\n[Data]")
-    if 'vector_store' in data:
-        print(f"  Vector store: {data['vector_store']}")
+    if config.data.vector_store:
+        print(f"  Vector store: {config.data.vector_store}")
     else:
-        print(f"  Passages: {data['passages']}")
-        if 'passage_count' in data:
-            print(f"  Passage count: {data['passage_count']}")
+        print(f"  Passages: {config.data.passages}")
+        if config.data.passage_count:
+            print(f"  Passage count: {config.data.passage_count}")
     
-    if 'tsv_path' in data:
-        print(f"  Dataset TSV: {data['tsv_path']}")
+    if config.data.tsv_path:
+        print(f"  Dataset TSV: {config.data.tsv_path}")
     else:
-        print(f"  Dataset split: {data.get('dataset_split', 'test')}")
+        print(f"  Dataset split: {config.data.dataset_split}")
     
-    if 'num_prompts' in data:
-        print(f"  Num prompts: {data['num_prompts']}")
+    if config.data.num_prompts:
+        print(f"  Num prompts: {config.data.num_prompts}")
     
     # Device section (shared by retrieval and reranking)
-    device = config.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
+    device = config.device or ('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nDevice: {device}")
     
     # Retrieval section
-    retrieval = config['retrieval']
     print("\n[Retrieval]")
-    print(f"  Model: {retrieval.get('model', 'intfloat/e5-base-v2')}")
-    print(f"  Top-k: {retrieval.get('top_k', 10)}")
+    print(f"  Model: {config.retrieval.model}")
+    print(f"  Top-k: {config.retrieval.top_k}")
     
     # Reranker section
-    reranker = config.get('reranker', {})
     print("\n[Reranker]")
-    print(f"  Enabled: {reranker.get('enabled', True)}")
-    if reranker.get('enabled', True):
-        print(f"  Model: {reranker.get('model', 'colbert-ir/colbertv2.0')}")
-        if 'top_p' in reranker:
-            print(f"  Top-p: {reranker['top_p']}")
+    print(f"  Enabled: {config.reranker.enabled}")
+    if config.reranker.enabled:
+        print(f"  Model: {config.reranker.model}")
+        if config.reranker.top_p is not None:
+            print(f"  Top-p: {config.reranker.top_p}")
     
     # Rewriter section
-    rewriter = config.get('rewriter', {})
     print("\n[Rewriter]")
-    print(f"  Enabled: {rewriter.get('enabled', False)}")
-    if rewriter.get('enabled', False):
-        print(f"  Endpoint: {rewriter['endpoint']}")
-        print(f"  Model: {rewriter['model']}")
-        print(f"  Steps: {rewriter['steps']}")
-        print(f"  Queries per step: {rewriter.get('queries_per_step', 3)}")
-        print(f"  Temperature: {rewriter.get('temperature', 0.7)}")
-        print(f"  Max tokens: {rewriter.get('max_tokens', 500)}")
+    print(f"  Enabled: {config.rewriter.enabled}")
+    if config.rewriter.enabled:
+        print(f"  Endpoint: {config.rewriter.endpoint}")
+        print(f"  Model: {config.rewriter.model}")
+        print(f"  Steps: {config.rewriter.steps}")
+        print(f"  Queries per step: {config.rewriter.queries_per_step}")
+        print(f"  Temperature: {config.rewriter.temperature}")
+        print(f"  Max tokens: {config.rewriter.max_tokens}")
     
     # Parallel section
-    parallel = config.get('parallel', {})
-    max_workers = parallel.get('max_workers', 1)
     print("\n[Parallel Processing]")
-    if max_workers and max_workers > 1:
+    if config.parallel and config.parallel > 1:
         print(f"  Enabled: True")
-        print(f"  Max workers: {max_workers}")
+        print(f"  Max workers: {config.parallel}")
     else:
         print(f"  Enabled: False (sequential processing)")
     
     # Output section
-    output = config.get('output', {})
     print("\n[Output]")
-    print(f"  Results: {output.get('results', 'retrieval_results.pkl')}")
-    if output.get('rewriter_io'):
-        print(f"  Rewriter I/O: {output['rewriter_io']}")
-    if output.get('retriever_io'):
-        print(f"  Retriever I/O: {output['retriever_io']}")
-    if output.get('reranker_io'):
-        print(f"  Reranker I/O: {output['reranker_io']}")
-    print(f"  Save JSON: {output.get('save_json', False)}")
-    print(f"  Save CSV: {output.get('save_csv', False)}")
-    print(f"  Verbose: {output.get('verbose', False)}")
+    print(f"  Results: {config.output.results}")
+    if config.output.rewriter_io:
+        print(f"  Rewriter I/O: {config.output.rewriter_io}")
+    if config.output.retriever_io:
+        print(f"  Retriever I/O: {config.output.retriever_io}")
+    if config.output.reranker_io:
+        print(f"  Reranker I/O: {config.output.reranker_io}")
+    print(f"  Save JSON: {config.output.save_json}")
+    print(f"  Save CSV: {config.output.save_csv}")
+    print(f"  Verbose: {config.output.verbose}")
     
     print(f"{'='*80}\n")
 
@@ -260,78 +213,62 @@ def main():
     # Load and validate configuration
     print(f"Loading configuration from: {args.config}")
     config = load_config(args.config)
-    validate_config(config)
     
     # Apply command-line overrides
-    if args.num_prompts is not None:
-        config['data']['num_prompts'] = args.num_prompts
-    if args.verbose:
-        config['output']['verbose'] = True
-    if args.output:
-        config['output']['results'] = args.output
-    if args.max_workers is not None:
-        if 'parallel' not in config:
-            config['parallel'] = {}
-        config['parallel']['max_workers'] = args.max_workers
+    config.apply_overrides(args)
     
     # Print configuration summary
     print_config_summary(config)
     
-    # Extract configuration sections
-    data_config = config['data']
-    retrieval_config = config['retrieval']
-    reranker_config = config.get('reranker', {'enabled': True})
-    rewriter_config = config.get('rewriter', {'enabled': False})
-    output_config = config.get('output', {})
-    
-    verbose = output_config.get('verbose', False)
+    # Get verbose flag
+    verbose = config.output.verbose
     
     # Initialize rewriter client if enabled
     rewriter = None
-    if rewriter_config.get('enabled', False):
+    if config.rewriter.enabled:
         print(f"Initializing rewriter client...")
-        print(f"  Endpoint: {rewriter_config['endpoint']}")
-        print(f"  Model: {rewriter_config['model']}")
-        print(f"  Queries per step: {rewriter_config.get('queries_per_step', 3)}")
-        print(f"  Number of steps: {rewriter_config['steps']}")
+        print(f"  Endpoint: {config.rewriter.endpoint}")
+        print(f"  Model: {config.rewriter.model}")
+        print(f"  Queries per step: {config.rewriter.queries_per_step}")
+        print(f"  Number of steps: {config.rewriter.steps}")
         
         rewriter_client = OpenAI(
-            base_url=rewriter_config['endpoint'],
-            api_key=rewriter_config.get('api_key', 'EMPTY')
+            base_url=config.rewriter.endpoint,
+            api_key=config.rewriter.api_key
         )
         
         rewriter = QueryRewriter(
             client=rewriter_client,
-            model=rewriter_config['model'],
-            temperature=rewriter_config.get('temperature', 0.7),
-            max_tokens=rewriter_config.get('max_tokens', 500)
+            model=config.rewriter.model,
+            temperature=config.rewriter.temperature,
+            max_tokens=config.rewriter.max_tokens
         )
     
     # Initialize vector store
     print("Initializing vector store...")
-    device = config.get('device')  # Read from top-level device field
+    device = config.device
     vector_store = VectorDB(
-        retriever_model=retrieval_config.get('model', 'intfloat/e5-base-v2'),
-        reranker_model=reranker_config.get('model', 'colbert-ir/colbertv2.0'),
+        retriever_model=config.retrieval.model,
+        reranker_model=config.reranker.model,
         device=device
     )
     
     # Load vector store or ingest passages
-    if 'vector_store' in data_config:
-        print(f"Loading vector store from {data_config['vector_store']}...")
-        vector_store.from_serialized(data_config['vector_store'])
+    if config.data.vector_store:
+        print(f"Loading vector store from {config.data.vector_store}...")
+        vector_store.from_serialized(config.data.vector_store)
         print("Vector store loaded successfully")
     else:
-        print(f"Loading passages from {data_config['passages']}...")
-        with open(data_config['passages']) as f:
+        print(f"Loading passages from {config.data.passages}...")
+        with open(config.data.passages) as f:
             passage_data = json.load(f)
         
         passage_list = [p.pop('passage') for p in passage_data]
         passage_metadata = [p for p in passage_data]
         
-        if 'passage_count' in data_config:
-            passage_list = passage_list[:data_config['passage_count']]
-            passage_metadata = passage_metadata[:data_config['passage_count']]
+        if config.data.passage_count:
+            passage_list = passage_list[:config.data.passage_count]
+            passage_metadata = passage_metadata[:config.data.passage_count]
         
         print(f"Ingesting {len(passage_list)} passages...")
         tic = time.time()
@@ -341,46 +278,42 @@ def main():
     
     # Load prompts
     prompts = PromptLoader.load(
-        split=data_config.get('dataset_split', 'test'),
-        tsv_path=data_config.get('tsv_path')
+        split=config.data.dataset_split,
+        tsv_path=config.data.tsv_path
     )
     
-    if 'num_prompts' in data_config:
-        prompts = prompts[:data_config['num_prompts']]
+    if config.data.num_prompts:
+        prompts = prompts[:config.data.num_prompts]
         print(f"Processing first {len(prompts)} prompts")
     
     # Create retrieval engine
     engine = RetrievalEngine(
         vector_store=vector_store,
-        use_reranker=reranker_config.get('enabled', True),
+        use_reranker=config.reranker.enabled,
         verbose=verbose
     )
-    
-    # Get parallel processing configuration
-    parallel_config = config.get('parallel', {})
-    max_workers = parallel_config.get('max_workers', 1)
     
     # Create batch processor
     processor = BatchProcessor(
         engine=engine,
         verbose=verbose,
-        max_workers=max_workers
+        max_workers=config.parallel
     )
     
-    # Build processing configuration
+    # Build processing configuration (for backward compatibility with processor)
     proc_config = {
-        'retriever_model': retrieval_config.get('model', 'intfloat/e5-base-v2'),
-        'reranker_model': reranker_config.get('model', 'colbert-ir/colbertv2.0'),
-        'use_reranker': reranker_config.get('enabled', True),
-        'top_k': retrieval_config.get('top_k', 10),
-        'top_p': reranker_config.get('top_p'),  # Read from reranker section
-        'num_rewriter_steps': rewriter_config.get('steps', 0) if rewriter_config.get('enabled') else 0,
-        'num_rewriter_queries': rewriter_config.get('queries_per_step', 3),
-        'rewriter_model': rewriter_config.get('model'),
+        'retriever_model': config.retrieval.model,
+        'reranker_model': config.reranker.model,
+        'use_reranker': config.reranker.enabled,
+        'top_k': config.retrieval.top_k,
+        'top_p': config.reranker.top_p,
+        'num_rewriter_steps': config.rewriter.steps if config.rewriter.enabled else 0,
+        'num_rewriter_queries': config.rewriter.queries_per_step,
+        'rewriter_model': config.rewriter.model,
         'rewriter': rewriter,
-        'rewriter_io': 'rewriter_io' in output_config,
-        'retriever_io': 'retriever_io' in output_config,
-        'reranker_io': 'reranker_io' in output_config
+        'rewriter_io': config.output.rewriter_io is not None,
+        'retriever_io': config.output.retriever_io is not None,
+        'reranker_io': config.output.reranker_io is not None
     }
     
     # Print processing header
@@ -404,36 +337,36 @@ def main():
     print(f"\n{'='*80}")
     print("Creating results DataFrame...")
     
-    output_path = output_config.get('results', 'retrieval_results.pkl')
+    output_path = config.output.results
     formats = ['pickle']
-    if output_config.get('save_json', False):
+    if config.output.save_json:
         formats.append('json')
-    if output_config.get('save_csv', False):
+    if config.output.save_csv:
         formats.append('csv')
     
     ResultsExporter.save(df, output_path, formats=formats, verbose=True)
     
     # Save rewriter I/O if requested
-    if 'rewriter_io' in output_config and io_data.get('rewriter'):
+    if config.output.rewriter_io and io_data.get('rewriter'):
         ResultsExporter.save_rewriter_io(
             io_data['rewriter'],
-            output_config['rewriter_io'],
+            config.output.rewriter_io,
             verbose=True
         )
     
     # Save retriever I/O if requested
-    if 'retriever_io' in output_config and io_data.get('retriever'):
+    if config.output.retriever_io and io_data.get('retriever'):
         ResultsExporter.save_retriever_io(
             io_data['retriever'],
-            output_config['retriever_io'],
+            config.output.retriever_io,
             verbose=True
         )
     
     # Save reranker I/O if requested
-    if 'reranker_io' in output_config and io_data.get('reranker'):
+    if config.output.reranker_io and io_data.get('reranker'):
         ResultsExporter.save_reranker_io(
             io_data['reranker'],
-            output_config['reranker_io'],
+            config.output.reranker_io,
             verbose=True
         )
     

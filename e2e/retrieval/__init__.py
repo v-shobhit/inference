@@ -9,6 +9,14 @@ from .metrics import MetricsCalculator
 from .results import ResultsCollector, ResultsExporter
 from .processor import BatchProcessor
 from .stats import RetrievalStats
+from .config import (
+    DataConfig,
+    RetrievalConfig,
+    RerankerConfig,
+    RewriterConfig,
+    OutputConfig,
+    PipelineConfig
+)
 
 __all__ = [
     'PromptLoader',
@@ -18,6 +26,12 @@ __all__ = [
     'ResultsCollector',
     'ResultsExporter',
     'BatchProcessor',
-    'RetrievalStats'
+    'RetrievalStats',
+    'DataConfig',
+    'RetrievalConfig',
+    'RerankerConfig',
+    'RewriterConfig',
+    'OutputConfig',
+    'PipelineConfig'
 ]
 
