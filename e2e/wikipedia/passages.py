@@ -64,6 +64,8 @@ class PassageBuilder:
                 print(f"Similarity threshold: {self.chunker.similarity_threshold}")
             if workers > 1:
                 print(f"Parallel processing: {workers} workers")
+                if self.chunker.use_semantic:
+                    print(f"⚠️  Note: First few articles may be slow (loading models in each worker)")
             else:
                 print("Sequential processing")
         

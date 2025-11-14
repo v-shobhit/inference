@@ -51,37 +51,39 @@ We extract all the unique Wikipedia links and download **clean article content**
 - ✅ **Automatic cleaning**: Removes "See also", "References", "External links" sections
 - ✅ **Smaller storage**: Plain text files instead of HTML/PDF
 
-You may use the [download_wiki_clean.py](./download_wiki_clean.py) script:
+You may use the [frames_wiki_fetch.py](./frames_wiki_fetch.py) script:
 ```bash
-$ python3 download_wiki_clean.py --help
-usage: download_wiki_clean.py [-h] [--tsv_path TSV_PATH] [--output_dir OUTPUT_DIR]
-                               [--output_data OUTPUT_DATA] [--max_urls MAX_URLS]
-                               [--processes PROCESSES] [--create_chunks]
-                               [--chunk_size CHUNK_SIZE] [--overlap OVERLAP]
+$ python3 frames_wiki_fetch.py --help
+usage: frames_wiki_fetch.py [-h] [--tsv-path TSV_PATH] [--output-dir OUTPUT_DIR]
+                             [--max-urls MAX_URLS] [--download-workers N]
+                             [--create-chunks] [--chunk-size CHUNK_SIZE] 
+                             [--overlap OVERLAP] [--semantic] [--no-semantic]
+                             [--chunk-workers N] [--chunk-device {cpu,cuda}]
 
 Download clean Wikipedia articles from FRAMES dataset using Wikipedia API
 
 options:
   -h, --help            show this help message and exit
-  --tsv_path TSV_PATH   Input TSV file with FRAMES data (default: download from Hugging Face)
-  --output_dir OUTPUT_DIR
+  --tsv-path TSV_PATH   Input TSV file with FRAMES data (default: download from Hugging Face)
+  --output-dir OUTPUT_DIR
                         Output directory for clean article text files (default: wiki_clean_articles)
-  --output_data OUTPUT_DATA
-                        Output directory for dataset file (default: data)
-  --max_urls MAX_URLS   Maximum number of URLs to process (default: all)
-  --processes PROCESSES
-                        Number of parallel processes (default: 10)
-  --create_chunks       Create passages JSON file with chunked content
-  --chunk_size CHUNK_SIZE
+  --max-urls MAX_URLS   Maximum number of URLs to process (default: all)
+  --download-workers N  Number of parallel download workers (default: 10, max: 20)
+  --create-chunks       Create passages JSON file with chunked content
+  --chunk-size CHUNK_SIZE
                         Maximum characters per chunk (default: 512)
   --overlap OVERLAP     Overlap between chunks in characters (default: 50)
+  --semantic            Use semantic chunking (default: True)
+  --no-semantic         Disable semantic chunking
+  --chunk-workers N     Parallel chunk workers (default: 1, max 8 for semantic)
+  --chunk-device        Device for chunking: cpu or cuda (default: auto)
 
 ## Sample usage - Download and create passages in one step
-$ python3 download_wiki_clean.py --output_dir wiki_clean --processes 20 --create_chunks --chunk_size 512 --overlap 50
+$ python3 frames_wiki_fetch.py --output-dir wiki_clean --download-workers 20 --create-chunks --chunk-size 512 --overlap 50
 
 ## Or download first, then create passages later
-$ python3 download_wiki_clean.py --output_dir wiki_clean --processes 20
-$ python3 download_wiki_clean.py --output_dir wiki_clean --create_chunks
+$ python3 frames_wiki_fetch.py --output-dir wiki_clean --download-workers 20
+$ python3 frames_wiki_fetch.py --output-dir wiki_clean --create-chunks
 ```
 
 ### Method 2: HTML/PDF Download (Legacy)
@@ -118,7 +120,7 @@ $ python3 download.py --output_dir doc_html --format html --processes 30
 ## Corpus preprocessing
 
 ### For Clean Wikipedia Content (Method 1)
-When using the `download_wiki_clean.py` script with the `--create_chunks` flag, preprocessing is **already done**! The script outputs:
+When using the `frames_wiki_fetch.py` script with the `--create-chunks` flag, preprocessing is **already done**! The script outputs:
 - Clean text files (one per Wikipedia article)
 - Metadata JSON files (article title, URL, etc.)
 - A `passages.json` file with chunked content ready for RAG
@@ -201,7 +203,7 @@ $ python3 read_pdf.py doc_pdf doc_txt_len256_overlap32 --max-length 256 --json-f
 1. **Clean Wikipedia method**: Uses sentence-aware chunking that preserves sentence boundaries for better context.
 2. **PDF/HTML method**: Character-level chunking may split sentences mid-way.
 3. Passage size directly affects vector operations. Consider the impact of passage length + overlap on vector size, ingestion time, and lookup time.
-4. For the clean Wikipedia method, recommended settings: `--chunk_size 512 --overlap 50`
+4. For the clean Wikipedia method, recommended settings: `--chunk-size 512 --overlap 50`
 
 ## Single-shot lookup
 1. Embed query: `Query text` -> `Query Tokens` -> `Query vector`

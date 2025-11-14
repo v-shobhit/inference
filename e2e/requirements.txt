@@ -1,4 +1,4 @@
-# Minimal requirements for download_wiki_clean.py with semantic chunking
+# Minimal requirements for frames_wiki_fetch.py with semantic chunking
 # Compatible with Python 3.12+
 
 # Core

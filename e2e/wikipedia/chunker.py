@@ -16,7 +16,8 @@ class TextChunker:
     def __init__(
         self,
         use_semantic: bool = True,
-        similarity_threshold: float = 0.75
+        similarity_threshold: float = 0.75,
+        device: str = None
     ):
         """
         Initialize the text chunker.
@@ -24,9 +25,12 @@ class TextChunker:
         Args:
             use_semantic: Whether to use semantic chunking (requires spacy + transformers)
             similarity_threshold: Similarity threshold (0-1) for grouping sentences
+            device: Device for embeddings ('cuda', 'cpu', or None for auto-detect)
+                   Recommended: 'cpu' when using multiple workers to avoid GPU conflicts
         """
         self.use_semantic = use_semantic
         self.similarity_threshold = similarity_threshold
+        self.device = device
         
         # Lazy-loaded models (loaded on first use)
         self._nlp = None
@@ -414,8 +418,21 @@ class TextChunker:
             from sentence_transformers import SentenceTransformer
             
             self._nlp = spacy.load("en_core_web_sm")
-            self._embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+            
+            # Determine device
+            if self.device is not None:
+                device = self.device
+            else:
+                # Auto-detect: use CPU in multiprocessing to avoid GPU conflicts
+                import torch
+                import os
+                # Check if we're in a worker process
+                in_worker = os.getenv('RANK') is not None or \
+                           hasattr(os, 'getppid') and os.getppid() != os.getpid()
+                device = 'cpu' if in_worker else ('cuda' if torch.cuda.is_available() else 'cpu')
+            
+            self._embedding_model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
             
             if verbose:
-                print("  Models loaded successfully")
+                print(f"  Models loaded successfully (device: {device})")
 

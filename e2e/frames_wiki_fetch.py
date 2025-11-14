@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Clean Wikipedia Content Downloader for FRAMES
+FRAMES Wikipedia Fetcher
 
-Downloads Wikipedia articles using the Wikipedia API and creates chunked passages
-for RAG retrieval. Uses modular architecture with reusable components.
+Downloads Wikipedia articles from FRAMES dataset using the Wikipedia API and 
+creates chunked passages for RAG retrieval. Uses modular architecture with 
+reusable components.
 
 Requirements:
     pip install wikipedia-api mwparserfromhell requests tqdm datasets pandas
@@ -11,19 +12,19 @@ Requirements:
 
 Usage:
     # Download articles only
-    python download_wiki_clean.py --output_dir wiki_clean_articles
+    python frames_wiki_fetch.py --output-dir wiki_clean_articles
     
     # Download and create chunked passages
-    python download_wiki_clean.py --output_dir wiki_clean_articles \\
-        --create_chunks --chunk_size 512 --overlap 50
+    python frames_wiki_fetch.py --output-dir wiki_clean_articles \\
+        --create-chunks --chunk-size 512 --overlap 50
     
     # Use semantic chunking (recommended)
-    python download_wiki_clean.py --output_dir wiki_clean_articles \\
-        --create_chunks --semantic --similarity-threshold 0.75
+    python frames_wiki_fetch.py --output-dir wiki_clean_articles \\
+        --create-chunks --semantic --similarity-threshold 0.75
     
     # From custom TSV file
-    python download_wiki_clean.py --tsv_path data/custom.tsv \\
-        --output_dir wiki_clean_articles
+    python frames_wiki_fetch.py --tsv-path data/custom.tsv \\
+        --output-dir wiki_clean_articles
 """
 
 import argparse
@@ -50,24 +51,24 @@ def main():
     
     # Input arguments
     parser.add_argument(
-        '--tsv_path',
+        '--tsv-path',
         default=None,
         help='Input TSV file with FRAMES data (default: download from Hugging Face)'
     )
     parser.add_argument(
-        '--dataset_split',
+        '--dataset-split',
         default='test',
-        help='HuggingFace dataset split to use (default: test). Ignored if --tsv_path provided.'
+        help='HuggingFace dataset split to use (default: test). Ignored if --tsv-path provided.'
     )
     
     # Output arguments
     parser.add_argument(
-        '--output_dir',
+        '--output-dir',
         default='wiki_clean_articles',
         help='Output directory for article text files (default: wiki_clean_articles)'
     )
     parser.add_argument(
-        '--max_urls',
+        '--max-urls',
         type=int,
         default=None,
         help='Maximum number of URLs to process (default: all)'
@@ -83,12 +84,12 @@ def main():
     
     # Chunking arguments
     parser.add_argument(
-        '--create_chunks',
+        '--create-chunks',
         action='store_true',
         help='Create passages JSON file with chunked content'
     )
     parser.add_argument(
-        '--chunk_size',
+        '--chunk-size',
         type=int,
         default=512,
         help='Maximum characters per chunk (default: 512)'
@@ -123,6 +124,14 @@ def main():
         default=1,
         help='Number of parallel workers for chunking (default: 1). Recommended: 2-8'
     )
+    parser.add_argument(
+        '--chunk-device',
+        type=str,
+        default=None,
+        choices=['cpu', 'cuda'],
+        help='Device for semantic chunking embeddings (default: auto). '
+             'Use "cpu" when using many workers to avoid GPU conflicts.'
+    )
     
     args = parser.parse_args()
     
@@ -132,9 +141,13 @@ def main():
         print(f"⚠️  WARNING: {args.chunk_workers} chunk workers exceeds CPU count ({max_workers})")
         print(f"   Reducing to {max_workers} workers...")
         args.chunk_workers = max_workers
-    elif args.chunk_workers > 8:
-        print(f"⚠️  Note: {args.chunk_workers} chunk workers may use significant memory (~500MB each)")
-        print(f"   Expected memory usage: ~{args.chunk_workers * 0.5:.1f}GB")
+    elif args.chunk_workers > 8 and args.semantic:
+        print(f"⚠️  WARNING: {args.chunk_workers} chunk workers with semantic chunking is NOT recommended!")
+        print(f"   - Memory usage: ~{args.chunk_workers * 0.5:.1f}GB (each worker loads embedding models)")
+        print(f"   - Model loading contention can cause hanging/deadlock")
+        print(f"   - GPU conflicts if using CUDA (will auto-switch to CPU)")
+        print(f"   STRONGLY RECOMMENDED: Use 4-8 workers for semantic, or --no-semantic for speed")
+        print(f"   Proceeding anyway... (this may hang or crash)")
     
     if args.download_workers > 20:
         print(f"⚠️  WARNING: {args.download_workers} download workers may overwhelm Wikipedia API")
@@ -214,9 +227,16 @@ def main():
         print("=" * 80)
         
         # Create chunker
+        # Use CPU by default when using multiple workers to avoid GPU conflicts
+        device = args.chunk_device
+        if device is None and args.chunk_workers > 1:
+            device = 'cpu'  # Force CPU for multi-worker to avoid GPU contention
+            print(f"ℹ️  Using CPU for chunking (multiple workers: {args.chunk_workers})")
+        
         chunker = TextChunker(
             use_semantic=args.semantic,
-            similarity_threshold=args.similarity_threshold
+            similarity_threshold=args.similarity_threshold,
+            device=device
         )
         
         # Create passage builder
