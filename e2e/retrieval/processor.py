@@ -13,6 +13,7 @@ from .query_rewriter import QueryRewriter
 from .results import ResultsCollector
 from .metrics import MetricsCalculator
 from .stats import RetrievalStats
+from .io_collector import IOCollector
 
 
 class BatchProcessor:
@@ -69,72 +70,49 @@ class BatchProcessor:
         Initialize result collectors and statistics tracking.
         
         Returns:
-            Tuple of (collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats)
+            Tuple of (collector, io_collector, stats)
         """
         collector = ResultsCollector()
-        all_rewriter_io = [] if config.get('rewriter_io') else None
-        all_retriever_io = [] if config.get('retriever_io') else None
-        all_reranker_io = [] if config.get('reranker_io') else None
+        io_collector = IOCollector(
+            collect_rewriter=config.get('rewriter_io', False),
+            collect_retriever=config.get('retriever_io', False),
+            collect_reranker=config.get('reranker_io', False)
+        )
         stats = RetrievalStats()
         
-        return collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats
+        return collector, io_collector, stats
     
     def _collect_result(
         self,
         prompt_data: Dict[str, Any],
         retrieval_result: 'RetrievalResult',
         collector: ResultsCollector,
-        all_rewriter_io: Optional[List],
-        all_retriever_io: Optional[List],
-        all_reranker_io: Optional[List],
+        io_collector: IOCollector,
         stats: RetrievalStats,
         config: Dict[str, Any]
     ) -> None:
         """
         Collect results from a single prompt processing.
         
-        This method updates the collector, I/O lists, and statistics in place.
+        This method updates the collector, I/O collector, and statistics in place.
         """
         prompt = prompt_data['prompt']
+        prompt_index = prompt_data['index']
         
         # Collect rewriter I/O if enabled
-        if config.get('rewriter_io') and retrieval_result.rewriter_io:
+        if retrieval_result.rewriter_io:
             for step_data in retrieval_result.rewriter_io:
-                all_rewriter_io.append({
-                    'prompt_index': prompt_data['index'],
-                    'prompt': prompt,
-                    'step': step_data.get('step', None),
-                    'rewriter_input': step_data.get('rewriter_input', ''),
-                    'rewriter_output': step_data.get('rewriter_output', ''),
-                    'generated_queries': step_data.get('generated_queries', [])
-                })
+                io_collector.add_rewriter(prompt_index, prompt, step_data)
         
         # Collect retriever I/O if enabled
-        if config.get('retriever_io') and retrieval_result.retriever_io:
+        if retrieval_result.retriever_io:
             for retriever_data in retrieval_result.retriever_io:
-                all_retriever_io.append({
-                    'prompt_index': prompt_data['index'],
-                    'prompt': prompt,
-                    'query': retriever_data.get('query', ''),
-                    'top_k': retriever_data.get('top_k'),
-                    'num_results': retriever_data.get('num_results'),
-                    'retrieved_passages': retriever_data.get('retrieved_passages', [])
-                })
+                io_collector.add_retriever(prompt_index, prompt, retriever_data)
         
         # Collect reranker I/O if enabled
-        if config.get('reranker_io') and retrieval_result.reranker_io:
+        if retrieval_result.reranker_io:
             for reranker_data in retrieval_result.reranker_io:
-                all_reranker_io.append({
-                    'prompt_index': prompt_data['index'],
-                    'prompt': prompt,
-                    'query': reranker_data.get('query', ''),
-                    'input_passages': reranker_data.get('input_passages', []),
-                    'output_before_normalization': reranker_data.get('output_before_normalization', []),
-                    'output_after_normalization': reranker_data.get('output_after_normalization', []),
-                    'top_p': reranker_data.get('top_p'),
-                    'num_kept_after_top_p': reranker_data.get('num_kept_after_top_p'),
-                    'num_filtered_by_top_p': reranker_data.get('num_filtered_by_top_p')
-                })
+                io_collector.add_reranker(prompt_index, prompt, reranker_data)
         
         # Add to results collector
         collector.add_result(
@@ -164,9 +142,7 @@ class BatchProcessor:
     def _finalize_results(
         self,
         collector: ResultsCollector,
-        all_rewriter_io: Optional[List],
-        all_retriever_io: Optional[List],
-        all_reranker_io: Optional[List],
+        io_collector: IOCollector,
         stats: RetrievalStats,
         num_prompts: int
     ) -> tuple:
@@ -182,12 +158,8 @@ class BatchProcessor:
         # Compile final statistics (stats class handles all calculations)
         final_stats = stats.to_dict()
         
-        # Create I/O data dictionary
-        io_data = {
-            'rewriter': all_rewriter_io,
-            'retriever': all_retriever_io,
-            'reranker': all_reranker_io
-        }
+        # Get I/O data from collector
+        io_data = io_collector.get_data()
         
         return df, io_data, final_stats
     
@@ -207,8 +179,7 @@ class BatchProcessor:
             Tuple of (results_df, io_data_dict, stats_dict)
         """
         # Initialize collectors and statistics
-        collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats = \
-            self._initialize_collectors(config)
+        collector, io_collector, stats = self._initialize_collectors(config)
         
         # Process each prompt
         for i, prompt_data in tqdm(enumerate(prompts), total=len(prompts), desc="Processing prompts", unit="prompt"):
@@ -223,8 +194,7 @@ class BatchProcessor:
             # Collect results
             self._collect_result(
                 prompt_data, retrieval_result, collector,
-                all_rewriter_io, all_retriever_io, all_reranker_io,
-                stats, config
+                io_collector, stats, config
             )
             
             # Log verbose output
@@ -232,8 +202,7 @@ class BatchProcessor:
         
         # Finalize and return results
         return self._finalize_results(
-            collector, all_rewriter_io, all_retriever_io, all_reranker_io,
-            stats, len(prompts)
+            collector, io_collector, stats, len(prompts)
         )
     
     def _process_prompts_parallel(
@@ -252,8 +221,7 @@ class BatchProcessor:
             Tuple of (results_df, io_data_dict, stats_dict)
         """
         # Initialize collectors and statistics
-        collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats = \
-            self._initialize_collectors(config)
+        collector, io_collector, stats = self._initialize_collectors(config)
         
         # Helper function to process a single prompt and return all data
         def process_prompt_wrapper(prompt_data):
@@ -286,8 +254,7 @@ class BatchProcessor:
                         with self.lock:
                             self._collect_result(
                                 prompt_data, retrieval_result, collector,
-                                all_rewriter_io, all_retriever_io, all_reranker_io,
-                                stats, config
+                                io_collector, stats, config
                             )
                         
                         # Log verbose output (outside lock)
@@ -302,8 +269,7 @@ class BatchProcessor:
         
         # Finalize and return results
         return self._finalize_results(
-            collector, all_rewriter_io, all_retriever_io, all_reranker_io,
-            stats, len(prompts)
+            collector, io_collector, stats, len(prompts)
         )
     
     def _process_single_prompt(

@@ -9,6 +9,7 @@ from .metrics import MetricsCalculator
 from .results import ResultsCollector, ResultsExporter
 from .processor import BatchProcessor
 from .stats import RetrievalStats
+from .io_collector import IOCollector
 from .config import (
     DataConfig,
     RetrievalConfig,
@@ -17,6 +18,8 @@ from .config import (
     OutputConfig,
     PipelineConfig
 )
+from .builder import PipelineBuilder
+from .pipeline import Pipeline, PipelineResult
 
 __all__ = [
     'PromptLoader',
@@ -27,11 +30,15 @@ __all__ = [
     'ResultsExporter',
     'BatchProcessor',
     'RetrievalStats',
+    'IOCollector',
     'DataConfig',
     'RetrievalConfig',
     'RerankerConfig',
     'RewriterConfig',
     'OutputConfig',
-    'PipelineConfig'
+    'PipelineConfig',
+    'PipelineBuilder',
+    'Pipeline',
+    'PipelineResult'
 ]
 
