@@ -12,21 +12,22 @@ from typing import List, Dict, Optional
 @dataclass
 class IOCollector:
     """Collects I/O data from retrieval, reranking, and rewriting."""
-    
+
     # Enable/disable collection for each type
     collect_rewriter: bool = False
     collect_retriever: bool = False
     collect_reranker: bool = False
-    
+
     # Data storage
     rewriter_data: List[Dict] = field(default_factory=list, init=False)
     retriever_data: List[Dict] = field(default_factory=list, init=False)
     reranker_data: List[Dict] = field(default_factory=list, init=False)
-    
-    def add_rewriter(self, prompt_index: int, prompt: str, step_data: Dict) -> None:
+
+    def add_rewriter(self, prompt_index: int, prompt: str,
+                     step_data: Dict) -> None:
         """
         Add rewriter I/O data.
-        
+
         Args:
             prompt_index: Index of the prompt
             prompt: The prompt text
@@ -34,7 +35,7 @@ class IOCollector:
         """
         if not self.collect_rewriter:
             return
-        
+
         self.rewriter_data.append({
             'prompt_index': prompt_index,
             'prompt': prompt,
@@ -43,11 +44,12 @@ class IOCollector:
             'rewriter_output': step_data.get('rewriter_output', ''),
             'generated_queries': step_data.get('generated_queries', [])
         })
-    
-    def add_retriever(self, prompt_index: int, prompt: str, retriever_data: Dict) -> None:
+
+    def add_retriever(self, prompt_index: int, prompt: str,
+                      retriever_data: Dict) -> None:
         """
         Add retriever I/O data.
-        
+
         Args:
             prompt_index: Index of the prompt
             prompt: The prompt text
@@ -55,7 +57,7 @@ class IOCollector:
         """
         if not self.collect_retriever:
             return
-        
+
         self.retriever_data.append({
             'prompt_index': prompt_index,
             'prompt': prompt,
@@ -64,11 +66,12 @@ class IOCollector:
             'num_results': retriever_data.get('num_results'),
             'retrieved_passages': retriever_data.get('retrieved_passages', [])
         })
-    
-    def add_reranker(self, prompt_index: int, prompt: str, reranker_data: Dict) -> None:
+
+    def add_reranker(self, prompt_index: int, prompt: str,
+                     reranker_data: Dict) -> None:
         """
         Add reranker I/O data.
-        
+
         Args:
             prompt_index: Index of the prompt
             prompt: The prompt text
@@ -76,7 +79,7 @@ class IOCollector:
         """
         if not self.collect_reranker:
             return
-        
+
         self.reranker_data.append({
             'prompt_index': prompt_index,
             'prompt': prompt,
@@ -88,11 +91,11 @@ class IOCollector:
             'num_kept_after_top_p': reranker_data.get('num_kept_after_top_p'),
             'num_filtered_by_top_p': reranker_data.get('num_filtered_by_top_p')
         })
-    
+
     def get_data(self) -> Dict[str, Optional[List]]:
         """
         Get all collected data.
-        
+
         Returns:
             Dictionary with keys 'rewriter', 'retriever', 'reranker'.
             Values are lists of data if collection was enabled, None otherwise.
@@ -102,19 +105,19 @@ class IOCollector:
             'retriever': self.retriever_data if self.collect_retriever else None,
             'reranker': self.reranker_data if self.collect_reranker else None
         }
-    
+
     def is_empty(self) -> bool:
         """
         Check if any data was collected.
-        
+
         Returns:
             True if no data was collected
         """
-        return (not self.rewriter_data and 
-                not self.retriever_data and 
+        return (not self.rewriter_data and
+                not self.retriever_data and
                 not self.reranker_data)
-    
+
     def __len__(self) -> int:
         """Return total number of collected items across all types."""
-        return len(self.rewriter_data) + len(self.retriever_data) + len(self.reranker_data)
-
+        return len(self.rewriter_data) + \
+            len(self.retriever_data) + len(self.reranker_data)

@@ -18,7 +18,7 @@ from .io_collector import IOCollector
 
 class BatchProcessor:
     """Orchestrates batch retrieval over multiple prompts."""
-    
+
     def __init__(
         self,
         engine: RetrievalEngine,
@@ -27,7 +27,7 @@ class BatchProcessor:
     ):
         """
         Initialize the BatchProcessor.
-        
+
         Args:
             engine: RetrievalEngine instance
             verbose: Whether to print verbose output
@@ -38,7 +38,7 @@ class BatchProcessor:
         self.verbose = verbose
         self.max_workers = max_workers
         self.lock = threading.Lock()  # For thread-safe operations
-    
+
     def process_prompts(
         self,
         prompts: List[Dict[str, Any]],
@@ -46,11 +46,11 @@ class BatchProcessor:
     ) -> tuple:
         """
         Process a batch of prompts (sequentially or in parallel).
-        
+
         Args:
             prompts: List of prompt dictionaries
             config: Configuration dictionary with retrieval parameters
-        
+
         Returns:
             Tuple of (results_df, io_data_dict, stats_dict)
             - results_df: DataFrame with retrieval results
@@ -68,7 +68,7 @@ class BatchProcessor:
     def _initialize_collectors(self, config: Dict[str, Any]) -> tuple:
         """
         Initialize result collectors and statistics tracking.
-        
+
         Returns:
             Tuple of (collector, io_collector, stats)
         """
@@ -79,9 +79,9 @@ class BatchProcessor:
             collect_reranker=config.get('reranker_io', False)
         )
         stats = RetrievalStats()
-        
+
         return collector, io_collector, stats
-    
+
     def _collect_result(
         self,
         prompt_data: Dict[str, Any],
@@ -93,52 +93,54 @@ class BatchProcessor:
     ) -> None:
         """
         Collect results from a single prompt processing.
-        
+
         This method updates the collector, I/O collector, and statistics in place.
         """
         prompt = prompt_data['prompt']
         prompt_index = prompt_data['index']
-        
+
         # Collect rewriter I/O if enabled
         if retrieval_result.rewriter_io:
             for step_data in retrieval_result.rewriter_io:
                 io_collector.add_rewriter(prompt_index, prompt, step_data)
-        
+
         # Collect retriever I/O if enabled
         if retrieval_result.retriever_io:
             for retriever_data in retrieval_result.retriever_io:
-                io_collector.add_retriever(prompt_index, prompt, retriever_data)
-        
+                io_collector.add_retriever(
+                    prompt_index, prompt, retriever_data)
+
         # Collect reranker I/O if enabled
         if retrieval_result.reranker_io:
             for reranker_data in retrieval_result.reranker_io:
                 io_collector.add_reranker(prompt_index, prompt, reranker_data)
-        
+
         # Add to results collector
         collector.add_result(
             prompt_data=prompt_data,
             retrieval_result=retrieval_result,
             verbose=self.verbose
         )
-        
+
         # Update statistics (now handled by RetrievalStats)
         stats.add_result(retrieval_result)
-    
-    def _log_retrieval_result(self, retrieval_result: 'RetrievalResult') -> None:
+
+    def _log_retrieval_result(
+            self, retrieval_result: 'RetrievalResult') -> None:
         """Log verbose output for a retrieval result."""
         if not self.verbose:
             return
-        
+
         if retrieval_result.rewriter_time > 0:
             tqdm.write(f"  Rewriter: {retrieval_result.rewriter_time:.3f}s | "
-                      f"Lookup: {retrieval_result.lookup_time:.3f}s | "
-                      f"Rerank: {retrieval_result.rerank_time:.3f}s | "
-                      f"Chunks kept: {retrieval_result.num_chunks_kept}")
+                       f"Lookup: {retrieval_result.lookup_time:.3f}s | "
+                       f"Rerank: {retrieval_result.rerank_time:.3f}s | "
+                       f"Chunks kept: {retrieval_result.num_chunks_kept}")
         else:
             tqdm.write(f"  Lookup: {retrieval_result.lookup_time:.3f}s | "
-                      f"Rerank: {retrieval_result.rerank_time:.3f}s | "
-                      f"Chunks kept: {retrieval_result.num_chunks_kept}")
-    
+                       f"Rerank: {retrieval_result.rerank_time:.3f}s | "
+                       f"Chunks kept: {retrieval_result.num_chunks_kept}")
+
     def _finalize_results(
         self,
         collector: ResultsCollector,
@@ -148,21 +150,21 @@ class BatchProcessor:
     ) -> tuple:
         """
         Finalize results by creating DataFrame and computing final statistics.
-        
+
         Returns:
             Tuple of (results_df, io_data_dict, final_stats_dict)
         """
         # Create DataFrame
         df = collector.to_dataframe()
-        
+
         # Compile final statistics (stats class handles all calculations)
         final_stats = stats.to_dict()
-        
+
         # Get I/O data from collector
         io_data = io_collector.get_data()
-        
+
         return df, io_data, final_stats
-    
+
     def _process_prompts_sequential(
         self,
         prompts: List[Dict[str, Any]],
@@ -170,41 +172,43 @@ class BatchProcessor:
     ) -> tuple:
         """
         Process prompts sequentially (original implementation).
-        
+
         Args:
             prompts: List of prompt dictionaries
             config: Configuration dictionary with retrieval parameters
-        
+
         Returns:
             Tuple of (results_df, io_data_dict, stats_dict)
         """
         # Initialize collectors and statistics
         collector, io_collector, stats = self._initialize_collectors(config)
-        
+
         # Process each prompt
-        for i, prompt_data in tqdm(enumerate(prompts), total=len(prompts), desc="Processing prompts", unit="prompt"):
+        for i, prompt_data in tqdm(enumerate(prompts), total=len(
+                prompts), desc="Processing prompts", unit="prompt"):
             prompt = prompt_data['prompt']
-            
+
             if self.verbose:
-                tqdm.write(f"\n[{i+1}/{len(prompts)}] Processing: {prompt[:80]}...")
-            
+                tqdm.write(
+                    f"\n[{i+1}/{len(prompts)}] Processing: {prompt[:80]}...")
+
             # Perform retrieval
             retrieval_result = self._process_single_prompt(prompt, config)
-            
+
             # Collect results
             self._collect_result(
                 prompt_data, retrieval_result, collector,
                 io_collector, stats, config
             )
-            
+
             # Log verbose output
             self._log_retrieval_result(retrieval_result)
-        
+
         # Finalize and return results
         return self._finalize_results(
             collector, io_collector, stats, len(prompts)
         )
-    
+
     def _process_prompts_parallel(
         self,
         prompts: List[Dict[str, Any]],
@@ -212,32 +216,32 @@ class BatchProcessor:
     ) -> tuple:
         """
         Process prompts in parallel using ThreadPoolExecutor.
-        
+
         Args:
             prompts: List of prompt dictionaries
             config: Configuration dictionary with retrieval parameters
-        
+
         Returns:
             Tuple of (results_df, io_data_dict, stats_dict)
         """
         # Initialize collectors and statistics
         collector, io_collector, stats = self._initialize_collectors(config)
-        
+
         # Helper function to process a single prompt and return all data
         def process_prompt_wrapper(prompt_data):
             """Wrapper to process a single prompt and return all necessary data."""
             prompt = prompt_data['prompt']
             retrieval_result = self._process_single_prompt(prompt, config)
             return (prompt_data, retrieval_result)
-        
+
         # Process prompts in parallel
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all tasks
             futures = {
-                executor.submit(process_prompt_wrapper, prompt_data): i 
+                executor.submit(process_prompt_wrapper, prompt_data): i
                 for i, prompt_data in enumerate(prompts)
             }
-            
+
             # Process results as they complete
             completed_count = 0
             with tqdm(total=len(prompts), desc="Processing prompts", unit="prompt") as pbar:
@@ -246,32 +250,34 @@ class BatchProcessor:
                     try:
                         prompt_data, retrieval_result = future.result()
                         prompt = prompt_data['prompt']
-                        
+
                         if self.verbose:
-                            tqdm.write(f"\n[{completed_count+1}/{len(prompts)}] Completed: {prompt[:80]}...")
-                        
+                            tqdm.write(
+                                f"\n[{completed_count+1}/{len(prompts)}] Completed: {prompt[:80]}...")
+
                         # Thread-safe collection of results
                         with self.lock:
                             self._collect_result(
                                 prompt_data, retrieval_result, collector,
                                 io_collector, stats, config
                             )
-                        
+
                         # Log verbose output (outside lock)
                         self._log_retrieval_result(retrieval_result)
-                        
+
                         completed_count += 1
                         pbar.update(1)
-                        
+
                     except Exception as e:
-                        tqdm.write(f"Error processing prompt {prompt_idx}: {str(e)}")
+                        tqdm.write(
+                            f"Error processing prompt {prompt_idx}: {str(e)}")
                         raise
-        
+
         # Finalize and return results
         return self._finalize_results(
             collector, io_collector, stats, len(prompts)
         )
-    
+
     def _process_single_prompt(
         self,
         prompt: str,
@@ -279,11 +285,11 @@ class BatchProcessor:
     ) -> RetrievalResult:
         """
         Process a single prompt with the configured retrieval strategy.
-        
+
         Args:
             prompt: The prompt/question to process
             config: Configuration dictionary
-        
+
         Returns:
             RetrievalResult
         """
@@ -310,7 +316,7 @@ class BatchProcessor:
                 save_retriever_io=config.get('retriever_io', False),
                 save_reranker_io=config.get('reranker_io', False)
             )
-    
+
     def print_summary(
         self,
         df: pd.DataFrame,
@@ -319,7 +325,7 @@ class BatchProcessor:
     ) -> None:
         """
         Print a summary of the batch processing results.
-        
+
         Args:
             df: Results DataFrame
             stats: Statistics dictionary
@@ -330,51 +336,62 @@ class BatchProcessor:
         print(f"{'='*80}")
         print(f"Total prompts processed: {stats['num_prompts']}")
         print(f"Total rows in DataFrame: {len(df)}")
-        
+
         print(f"\nRetrieval Configuration:")
         print(f"  Retriever: {config.get('retriever_model', 'N/A')}")
-        print(f"  Reranker: {config.get('reranker_model', 'Disabled') if config.get('use_reranker', True) else 'Disabled'}")
-        
+        print(
+            f"  Reranker: {config.get('reranker_model', 'Disabled') if config.get('use_reranker', True) else 'Disabled'}")
+
         if config.get('num_rewriter_steps', 0) > 0:
             print(f"  Rewriter: {config.get('rewriter_model', 'N/A')}")
             print(f"  Rewriter steps: {config.get('num_rewriter_steps')}")
             print(f"  Queries per step: {config.get('num_rewriter_queries')}")
-            print(f"  Total queries per prompt: {config.get('num_rewriter_steps') * config.get('num_rewriter_queries')}")
-        
+            print(
+                f"  Total queries per prompt: {config.get('num_rewriter_steps') * config.get('num_rewriter_queries')}")
+
         print(f"  Initial top_k: {config.get('top_k', 10)}")
-        
+
         if config.get('top_p'):
             print(f"  Top-p filtering: {config.get('top_p')}")
-            print(f"  Avg chunks kept per prompt: {stats['avg_chunks_kept']:.1f} (dynamic)")
+            print(
+                f"  Avg chunks kept per prompt: {stats['avg_chunks_kept']:.1f} (dynamic)")
         else:
             if config.get('num_rewriter_steps', 0) > 0:
-                expected = config.get('top_k', 10) * config.get('num_rewriter_steps', 1) * config.get('num_rewriter_queries', 3)
-                print(f"  Chunks per prompt: ~{expected} before deduplication (dynamic)")
+                expected = config.get('top_k',
+                                      10) * config.get('num_rewriter_steps',
+                                                       1) * config.get('num_rewriter_queries',
+                                                                       3)
+                print(
+                    f"  Chunks per prompt: ~{expected} before deduplication (dynamic)")
             else:
-                print(f"  Chunks per prompt: {config.get('top_k', 10)} (fixed)")
-        
+                print(
+                    f"  Chunks per prompt: {config.get('top_k', 10)} (fixed)")
+
         # Average unique articles per prompt
         avg_unique_articles = df['num_unique_articles'].mean()
         print(f"\nAvg unique articles per prompt: {avg_unique_articles:.2f}")
-        
+
         # Timing
         print(f"\nTiming:")
         if stats['total_rewriter_time'] > 0:
-            print(f"  Total rewriter time: {stats['total_rewriter_time']:.2f}s")
-            print(f"  Avg rewriter per prompt: {stats['avg_rewriter_time']:.3f}s")
+            print(
+                f"  Total rewriter time: {stats['total_rewriter_time']:.2f}s")
+            print(
+                f"  Avg rewriter per prompt: {stats['avg_rewriter_time']:.3f}s")
         print(f"  Total lookup time: {stats['total_lookup_time']:.2f}s")
         print(f"  Total rerank time: {stats['total_rerank_time']:.2f}s")
         print(f"  Avg lookup per prompt: {stats['avg_lookup_time']:.3f}s")
         print(f"  Avg rerank per prompt: {stats['avg_rerank_time']:.3f}s")
-        
-        total_time = stats['total_lookup_time'] + stats['total_rerank_time'] + stats['total_rewriter_time']
+
+        total_time = stats['total_lookup_time'] + \
+            stats['total_rerank_time'] + stats['total_rewriter_time']
         print(f"  Total time: {total_time:.2f}s")
-        
+
         # Passage count statistics
         print(f"\n{'='*80}")
         print("PASSAGE COUNT STATISTICS (per prompt)")
         print(f"{'='*80}")
-        
+
         def print_stat_line(label, stat_dict):
             """Helper to print statistics in a formatted line."""
             if not stat_dict:
@@ -385,41 +402,53 @@ class BatchProcessor:
                   f"Median: {stat_dict['median']:.1f}  |  "
                   f"Q1: {stat_dict['q1']:.1f}  |  "
                   f"Q3: {stat_dict['q3']:.1f}")
-            print(f"  Min: {stat_dict['min']:.0f}  |  Max: {stat_dict['max']:.0f}")
-        
-        print_stat_line("After Retrieval (top_k)", stats['passages_before_rerank'])
+            print(
+                f"  Min: {stat_dict['min']:.0f}  |  Max: {stat_dict['max']:.0f}")
+
+        print_stat_line(
+            "After Retrieval (top_k)",
+            stats['passages_before_rerank'])
         if config.get('use_reranker', True):
             print()
-            print_stat_line("After Reranking + Top-p", stats['passages_after_rerank'])
-        
+            print_stat_line(
+                "After Reranking + Top-p",
+                stats['passages_after_rerank'])
+
         # Aggregate retrieval metrics
         print(f"\n{'='*80}")
         print("RETRIEVAL PERFORMANCE METRICS")
         print(f"{'='*80}")
-        
+
         metrics = MetricsCalculator.aggregate_metrics(df)
-        
+
         # Highlight key metrics
         print(f"\n{'*' * 50}")
-        print(f"  Average Recall:    {metrics['avg_recall']:.4f} ({metrics['avg_recall']*100:.2f}%)")
-        print(f"  Average Precision: {metrics['avg_precision']:.4f} ({metrics['avg_precision']*100:.2f}%)")
-        print(f"  F1 Score:          {metrics['f1_score']:.4f} ({metrics['f1_score']*100:.2f}%)")
+        print(
+            f"  Average Recall:    {metrics['avg_recall']:.4f} ({metrics['avg_recall']*100:.2f}%)")
+        print(
+            f"  Average Precision: {metrics['avg_precision']:.4f} ({metrics['avg_precision']*100:.2f}%)")
+        print(
+            f"  F1 Score:          {metrics['f1_score']:.4f} ({metrics['f1_score']*100:.2f}%)")
         print(f"{'*' * 50}")
-        
+
         # Perfect/zero counts
-        print(f"\nPerfect recall (100%):     {metrics['perfect_recall_count']}/{len(df)} prompts ({metrics['perfect_recall_pct']:.1f}%)")
-        print(f"Perfect precision (100%):  {metrics['perfect_precision_count']}/{len(df)} prompts ({metrics['perfect_precision_pct']:.1f}%)")
-        print(f"Zero recall (0%):          {metrics['zero_recall_count']}/{len(df)} prompts ({metrics['zero_recall_pct']:.1f}%)")
-        
+        print(
+            f"\nPerfect recall (100%):     {metrics['perfect_recall_count']}/{len(df)} prompts ({metrics['perfect_recall_pct']:.1f}%)")
+        print(
+            f"Perfect precision (100%):  {metrics['perfect_precision_count']}/{len(df)} prompts ({metrics['perfect_precision_pct']:.1f}%)")
+        print(
+            f"Zero recall (0%):          {metrics['zero_recall_count']}/{len(df)} prompts ({metrics['zero_recall_pct']:.1f}%)")
+
         # Distribution analysis
-        recall_dist = MetricsCalculator.distribution_analysis(df['retrieve_recall'].tolist())
-        precision_dist = MetricsCalculator.distribution_analysis(df['retrieve_precision'].tolist())
-        
+        recall_dist = MetricsCalculator.distribution_analysis(
+            df['retrieve_recall'].tolist())
+        precision_dist = MetricsCalculator.distribution_analysis(
+            df['retrieve_precision'].tolist())
+
         print(f"\nRecall Distribution:")
         for bin_range, count in recall_dist.items():
             print(f"  {bin_range}: {count} prompts")
-        
+
         print(f"\nPrecision Distribution:")
         for bin_range, count in precision_dist.items():
             print(f"  {bin_range}: {count} prompts")
-
