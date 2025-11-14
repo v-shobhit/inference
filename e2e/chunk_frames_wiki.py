@@ -188,7 +188,7 @@ def main():
 
     passages_stats = builder.create_passages_from_articles(
         articles_dir=articles_dir,
-        output_json=args.output,
+        output_json=Path(args.output),
         max_length=args.chunk_size,
         overlap=args.overlap,
         workers=args.workers,

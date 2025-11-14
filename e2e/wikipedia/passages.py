@@ -4,7 +4,7 @@ Passage creation and management from Wikipedia articles.
 
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Union
 from multiprocessing import Pool
 from tqdm import tqdm
 from .chunker import TextChunker
@@ -27,8 +27,8 @@ class PassageBuilder:
     
     def create_passages_from_articles(
         self,
-        articles_dir: Path,
-        output_json: Path,
+        articles_dir: Union[Path, str],
+        output_json: Union[Path, str],
         max_length: int = 512,
         overlap: int = 50,
         workers: int = 1,
@@ -48,7 +48,10 @@ class PassageBuilder:
         Returns:
             Dictionary with statistics
         """
-        articles_dir = Path(articles_dir)
+        if isinstance(output_json, str):
+            output_json = Path(output_json)
+        if isinstance(articles_dir, str):
+            articles_dir = Path(articles_dir)
         
         # Find all text files
         txt_files = list(articles_dir.glob("*.txt"))
