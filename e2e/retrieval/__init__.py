@@ -8,6 +8,7 @@ from .engine import RetrievalEngine
 from .metrics import MetricsCalculator
 from .results import ResultsCollector, ResultsExporter
 from .processor import BatchProcessor
+from .stats import RetrievalStats
 
 __all__ = [
     'PromptLoader',
@@ -16,6 +17,7 @@ __all__ = [
     'MetricsCalculator',
     'ResultsCollector',
     'ResultsExporter',
-    'BatchProcessor'
+    'BatchProcessor',
+    'RetrievalStats'
 ]
 

@@ -5,7 +5,7 @@ Retrieval engine for vector search and reranking.
 import time
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from vectordb import VectorDB
 from .query_rewriter import QueryRewriter
 
@@ -18,21 +18,13 @@ class RetrievalResult:
     lookup_time: float
     rerank_time: float
     rewriter_time: float = 0.0
-    generated_queries: List[str] = None
-    rewriter_io: List[Dict] = None  # For debugging query generation
-    retriever_io: List[Dict] = None  # For debugging retrieval
-    reranker_io: List[Dict] = None  # For debugging reranking
-    num_chunks_kept: int = 0
+    generated_queries: List[str] = field(default_factory=list)
+    rewriter_io: List[Dict] = field(default_factory=list)  # For debugging query generation
+    retriever_io: List[Dict] = field(default_factory=list)  # For debugging retrieval
+    reranker_io: List[Dict] = field(default_factory=list)  # For debugging reranking
+    num_chunks_kept: int = field(init=False)
     
     def __post_init__(self):
-        if self.generated_queries is None:
-            self.generated_queries = []
-        if self.rewriter_io is None:
-            self.rewriter_io = []
-        if self.retriever_io is None:
-            self.retriever_io = []
-        if self.reranker_io is None:
-            self.reranker_io = []
         self.num_chunks_kept = len(self.reranked_results)
 
 

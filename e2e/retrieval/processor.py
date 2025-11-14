@@ -12,6 +12,7 @@ from .engine import RetrievalEngine, RetrievalResult
 from .query_rewriter import QueryRewriter
 from .results import ResultsCollector
 from .metrics import MetricsCalculator
+from .stats import RetrievalStats
 
 
 class BatchProcessor:
@@ -68,21 +69,13 @@ class BatchProcessor:
         Initialize result collectors and statistics tracking.
         
         Returns:
-            Tuple of (collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats_dict)
+            Tuple of (collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats)
         """
         collector = ResultsCollector()
         all_rewriter_io = [] if config.get('rewriter_io') else None
         all_retriever_io = [] if config.get('retriever_io') else None
         all_reranker_io = [] if config.get('reranker_io') else None
-        
-        stats = {
-            'total_lookup_time': 0.0,
-            'total_rerank_time': 0.0,
-            'total_rewriter_time': 0.0,
-            'total_chunks_kept': 0,
-            'passages_before_rerank': [],
-            'passages_after_rerank': []
-        }
+        stats = RetrievalStats()
         
         return collector, all_rewriter_io, all_retriever_io, all_reranker_io, stats
     
@@ -94,7 +87,7 @@ class BatchProcessor:
         all_rewriter_io: Optional[List],
         all_retriever_io: Optional[List],
         all_reranker_io: Optional[List],
-        stats: Dict[str, Any],
+        stats: RetrievalStats,
         config: Dict[str, Any]
     ) -> None:
         """
@@ -150,15 +143,8 @@ class BatchProcessor:
             verbose=self.verbose
         )
         
-        # Update statistics
-        stats['total_lookup_time'] += retrieval_result.lookup_time
-        stats['total_rerank_time'] += retrieval_result.rerank_time
-        stats['total_rewriter_time'] += retrieval_result.rewriter_time
-        stats['total_chunks_kept'] += retrieval_result.num_chunks_kept
-        
-        # Track per-prompt passage counts
-        stats['passages_before_rerank'].append(len(retrieval_result.raw_results))
-        stats['passages_after_rerank'].append(len(retrieval_result.reranked_results))
+        # Update statistics (now handled by RetrievalStats)
+        stats.add_result(retrieval_result)
     
     def _log_retrieval_result(self, retrieval_result: 'RetrievalResult') -> None:
         """Log verbose output for a retrieval result."""
@@ -181,7 +167,7 @@ class BatchProcessor:
         all_rewriter_io: Optional[List],
         all_retriever_io: Optional[List],
         all_reranker_io: Optional[List],
-        stats: Dict[str, Any],
+        stats: RetrievalStats,
         num_prompts: int
     ) -> tuple:
         """
@@ -193,35 +179,8 @@ class BatchProcessor:
         # Create DataFrame
         df = collector.to_dataframe()
         
-        # Calculate passage statistics
-        def calculate_stats(values):
-            """Calculate mean, quartiles, min, max for a list of values."""
-            if not values:
-                return {}
-            arr = np.array(values)
-            return {
-                'mean': float(np.mean(arr)),
-                'min': float(np.min(arr)),
-                'q1': float(np.percentile(arr, 25)),
-                'median': float(np.percentile(arr, 50)),
-                'q3': float(np.percentile(arr, 75)),
-                'max': float(np.max(arr))
-            }
-        
-        # Compile final statistics
-        final_stats = {
-            'num_prompts': num_prompts,
-            'total_lookup_time': stats['total_lookup_time'],
-            'total_rerank_time': stats['total_rerank_time'],
-            'total_rewriter_time': stats['total_rewriter_time'],
-            'total_chunks_kept': stats['total_chunks_kept'],
-            'avg_lookup_time': stats['total_lookup_time'] / num_prompts if num_prompts else 0,
-            'avg_rerank_time': stats['total_rerank_time'] / num_prompts if num_prompts else 0,
-            'avg_rewriter_time': stats['total_rewriter_time'] / num_prompts if stats['total_rewriter_time'] > 0 else 0,
-            'avg_chunks_kept': stats['total_chunks_kept'] / num_prompts if num_prompts else 0,
-            'passages_before_rerank': calculate_stats(stats['passages_before_rerank']),
-            'passages_after_rerank': calculate_stats(stats['passages_after_rerank'])
-        }
+        # Compile final statistics (stats class handles all calculations)
+        final_stats = stats.to_dict()
         
         # Create I/O data dictionary
         io_data = {
