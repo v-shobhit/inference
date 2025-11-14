@@ -52,19 +52,17 @@ class QueryRewriter:
             If return_io is False: List of generated query strings
             If return_io is True: Tuple of (queries, prompt_sent, raw_output)
         """
-        # Format the prompt
-        prompt = format_query_generation_prompt(
+        # Format the messages (returns list of message dicts)
+        messages = format_query_generation_prompt(
             user_question=user_question,
             k=k,
             summarized_partial_context=summarized_context
         )
         
-        # Call the rewriter LLM
+        # Call the rewriter LLM with formatted messages
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
+            messages=messages,
             temperature=self.temperature,
             max_tokens=self.max_tokens
         )
@@ -76,7 +74,9 @@ class QueryRewriter:
         queries = self._parse_queries(generated_text, k)
         
         if return_io:
-            return (queries, prompt, generated_text)
+            # Combine all message contents for debugging
+            combined_prompt = "\n\n".join([f"[{msg['role'].upper()}]\n{msg['content']}" for msg in messages])
+            return (queries, combined_prompt, generated_text)
         else:
             return queries
     

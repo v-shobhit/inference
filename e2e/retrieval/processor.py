@@ -2,6 +2,7 @@
 Batch processing of retrieval tasks.
 """
 
+import numpy as np
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from tqdm import tqdm
@@ -45,13 +46,17 @@ class BatchProcessor:
             Tuple of (results_df, rewriter_io_data, stats_dict)
         """
         collector = ResultsCollector()
-        all_rewriter_io = [] if config.get('save_rewriter_io') else None
+        all_rewriter_io = [] if config.get('rewriter_io') else None
         
         # Statistics tracking
         total_lookup_time = 0.0
         total_rerank_time = 0.0
         total_rewriter_time = 0.0
         total_chunks_kept = 0
+        
+        # Track passages per prompt for statistics
+        passages_before_rerank = []  # List of counts per prompt
+        passages_after_rerank = []   # List of counts per prompt
         
         # Process each prompt
         for i, prompt_data in tqdm(enumerate(prompts), total=len(prompts), desc="Processing prompts", unit="prompt"):
@@ -63,13 +68,17 @@ class BatchProcessor:
             # Perform retrieval
             retrieval_result = self._process_single_prompt(prompt, config)
             
-            # Collect rewriter I/O if enabled
-            if config.get('save_rewriter_io') and retrieval_result.rewriter_io:
-                all_rewriter_io.append({
-                    'prompt_index': prompt_data['index'],
-                    'prompt': prompt,
-                    'rewriter_steps': retrieval_result.rewriter_io
-                })
+            # Collect rewriter I/O if enabled (one row per step)
+            if config.get('rewriter_io') and retrieval_result.rewriter_io:
+                for step_data in retrieval_result.rewriter_io:
+                    all_rewriter_io.append({
+                        'prompt_index': prompt_data['index'],
+                        'prompt': prompt,
+                        'step': step_data.get('step', None),
+                        'rewriter_input': step_data.get('rewriter_input', ''),
+                        'rewriter_output': step_data.get('rewriter_output', ''),
+                        'generated_queries': step_data.get('generated_queries', [])
+                    })
             
             # Add to results collector
             collector.add_result(
@@ -83,6 +92,10 @@ class BatchProcessor:
             total_rerank_time += retrieval_result.rerank_time
             total_rewriter_time += retrieval_result.rewriter_time
             total_chunks_kept += retrieval_result.num_chunks_kept
+            
+            # Track per-prompt passage counts
+            passages_before_rerank.append(len(retrieval_result.raw_results))
+            passages_after_rerank.append(len(retrieval_result.reranked_results))
             
             if self.verbose:
                 if retrieval_result.rewriter_time > 0:
@@ -98,6 +111,21 @@ class BatchProcessor:
         # Create DataFrame
         df = collector.to_dataframe()
         
+        # Calculate passage statistics
+        def calculate_stats(values):
+            """Calculate mean, quartiles, min, max for a list of values."""
+            if not values:
+                return {}
+            arr = np.array(values)
+            return {
+                'mean': float(np.mean(arr)),
+                'min': float(np.min(arr)),
+                'q1': float(np.percentile(arr, 25)),
+                'median': float(np.percentile(arr, 50)),
+                'q3': float(np.percentile(arr, 75)),
+                'max': float(np.max(arr))
+            }
+        
         # Compile statistics
         stats = {
             'num_prompts': len(prompts),
@@ -108,7 +136,10 @@ class BatchProcessor:
             'avg_lookup_time': total_lookup_time / len(prompts),
             'avg_rerank_time': total_rerank_time / len(prompts),
             'avg_rewriter_time': total_rewriter_time / len(prompts) if total_rewriter_time > 0 else 0,
-            'avg_chunks_kept': total_chunks_kept / len(prompts) if prompts else 0
+            'avg_chunks_kept': total_chunks_kept / len(prompts) if prompts else 0,
+            # Passage count statistics
+            'passages_before_rerank': calculate_stats(passages_before_rerank),
+            'passages_after_rerank': calculate_stats(passages_after_rerank)
         }
         
         return df, all_rewriter_io, stats
@@ -138,7 +169,7 @@ class BatchProcessor:
                 num_rewriter_steps=config.get('num_rewriter_steps', 1),
                 top_k=config.get('top_k', 10),
                 top_p=config.get('top_p'),
-                save_io=config.get('save_rewriter_io', False)
+                save_io=config.get('rewriter_io', False)
             )
         else:
             # Direct retrieval
@@ -206,6 +237,28 @@ class BatchProcessor:
         
         total_time = stats['total_lookup_time'] + stats['total_rerank_time'] + stats['total_rewriter_time']
         print(f"  Total time: {total_time:.2f}s")
+        
+        # Passage count statistics
+        print(f"\n{'='*80}")
+        print("PASSAGE COUNT STATISTICS (per prompt)")
+        print(f"{'='*80}")
+        
+        def print_stat_line(label, stat_dict):
+            """Helper to print statistics in a formatted line."""
+            if not stat_dict:
+                print(f"{label}: N/A")
+                return
+            print(f"{label}:")
+            print(f"  Mean: {stat_dict['mean']:.1f}  |  "
+                  f"Median: {stat_dict['median']:.1f}  |  "
+                  f"Q1: {stat_dict['q1']:.1f}  |  "
+                  f"Q3: {stat_dict['q3']:.1f}")
+            print(f"  Min: {stat_dict['min']:.0f}  |  Max: {stat_dict['max']:.0f}")
+        
+        print_stat_line("After Retrieval (top_k)", stats['passages_before_rerank'])
+        if config.get('use_reranker', True):
+            print()
+            print_stat_line("After Reranking + Top-p", stats['passages_after_rerank'])
         
         # Aggregate retrieval metrics
         print(f"\n{'='*80}")

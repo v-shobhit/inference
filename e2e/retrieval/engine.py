@@ -139,6 +139,7 @@ class RetrievalEngine:
         total_rewriter_time = 0.0
         all_generated_queries = []
         rewriter_io_list = [] if save_io else []
+        accumulated_context = "None yet - this is the first retrieval step."
         
         # Repeat rewrite->retrieve sequence for num_rewriter_steps
         for step in range(num_rewriter_steps):
@@ -146,12 +147,13 @@ class RetrievalEngine:
                 print(f"  === Rewriter Step {step+1}/{num_rewriter_steps} ===")
                 print(f"  Generating {num_rewriter_queries} queries with rewriter...")
             
-            # Step 1: Generate queries using rewriter
+            # Step 1: Generate queries using rewriter (with accumulated context from previous steps)
             tic = time.time()
             if save_io:
                 step_queries, rewriter_input, rewriter_output = rewriter.generate_queries(
                     user_question=user_question,
                     k=num_rewriter_queries,
+                    summarized_context=accumulated_context,
                     return_io=True
                 )
                 # Store the I/O for this step
@@ -165,6 +167,7 @@ class RetrievalEngine:
                 step_queries = rewriter.generate_queries(
                     user_question=user_question,
                     k=num_rewriter_queries,
+                    summarized_context=accumulated_context,
                     return_io=False
                 )
             rewriter_time = time.time() - tic
@@ -177,15 +180,29 @@ class RetrievalEngine:
                     print(f"    {i}. {q}")
             
             # Step 2: Retrieve for each generated query in this step
+            step_results = []
             for query in step_queries:
                 result = self.retrieve(query=query, top_k=top_k, top_p=top_p)
                 all_results.extend(result.raw_results)
                 all_reranked_results.extend(result.reranked_results)
+                step_results.extend(result.reranked_results)
                 total_lookup_time += result.lookup_time
                 total_rerank_time += result.rerank_time
             
             if self.verbose:
                 print(f"  Step {step+1} retrieved {len(step_queries) * top_k} passages")
+            
+            # Step 3: Update accumulated context for next step
+            # Deduplicate step results and use ALL top-p filtered passages as context
+            if step < num_rewriter_steps - 1:  # Don't need to update on last step
+                # Deduplicate passages from this step (multiple queries may return same passage)
+                step_raw_results = []  # Placeholder for deduplication
+                deduplicated_step_results = self._deduplicate_results(step_results, step_raw_results)
+                
+                # Use ALL deduplicated, top-p filtered results as context
+                accumulated_context = self._summarize_passages_for_context(deduplicated_step_results)
+                if self.verbose:
+                    print(f"  Updated context: {len(step_results)} passages → {len(deduplicated_step_results)} unique passages for next step")
         
         # Step 3: Deduplicate and re-rank all retrieved passages across all steps
         deduplicated_results = self._deduplicate_results(all_reranked_results, all_results)
@@ -218,6 +235,36 @@ class RetrievalEngine:
             generated_queries=all_generated_queries,
             rewriter_io=rewriter_io_list
         )
+    
+    def _summarize_passages_for_context(
+        self,
+        passages: List[Tuple[str, float]],
+        max_passages: Optional[int] = None
+    ) -> str:
+        """
+        Summarize retrieved passages into a concise context string for the next rewriter step.
+        
+        Args:
+            passages: List of (passage_text, score) tuples (already top-p filtered and deduplicated)
+            max_passages: Maximum number of passages to include. If None, uses all passages.
+        
+        Returns:
+            Formatted string with passage summaries
+        """
+        if not passages:
+            return "No relevant documents found in previous step."
+        
+        # Use all passages by default, or limit if specified
+        passages_to_use = passages[:max_passages] if max_passages is not None else passages
+        
+        # Format as numbered list of passages
+        context_lines = []
+        for i, (passage_text, score) in enumerate(passages_to_use, 1):
+            # Truncate very long passages to keep prompt manageable
+            truncated = passage_text[:500] + "..." if len(passage_text) > 500 else passage_text
+            context_lines.append(f"[Document {i}] {truncated}")
+        
+        return "\n\n".join(context_lines)
     
     def _normalize_scores(self, results: List[Tuple[str, float]]) -> List[Tuple[str, float]]:
         """

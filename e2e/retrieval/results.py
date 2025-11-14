@@ -218,19 +218,19 @@ class ResultsExporter:
         if verbose:
             print(f"\n✅ Saved {len(io_df)} rewriter I/O records to {output_path}")
             
-            # Print diagnostics
-            total_steps = sum(len(record.get('rewriter_steps', [])) for record in io_data)
-            print(f"   Total rewriter steps across all prompts: {total_steps}")
+            # Print diagnostics (with new flat structure: one row per step)
+            num_unique_prompts = io_df['prompt_index'].nunique() if 'prompt_index' in io_df.columns else 0
+            print(f"   Total rewriter steps: {len(io_df)}")
+            print(f"   Unique prompts: {num_unique_prompts}")
+            if num_unique_prompts > 0:
+                print(f"   Average steps per prompt: {len(io_df) / num_unique_prompts:.1f}")
             
-            # Check for reasoning tokens
-            reasoning_count = 0
-            for record in io_data:
-                for step in record.get('rewriter_steps', []):
-                    output = step.get('rewriter_output', '')
-                    if any(token in output.lower() for token in ['<channel>', '>analysis<', '<message>', 'we need to']):
-                        reasoning_count += 1
-                        break
-            
-            if reasoning_count > 0:
-                print(f"   ⚠️  {reasoning_count}/{len(io_data)} prompts have reasoning tokens in output")
+            # Check for reasoning tokens in outputs
+            if 'rewriter_output' in io_df.columns:
+                reasoning_count = io_df['rewriter_output'].apply(
+                    lambda x: any(token in str(x).lower() for token in ['<channel>', '>analysis<', '<message>', 'we need to'])
+                ).sum()
+                
+                if reasoning_count > 0:
+                    print(f"   ⚠️  {reasoning_count}/{len(io_df)} steps have reasoning tokens in output")
 
