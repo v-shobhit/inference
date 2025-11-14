@@ -90,8 +90,8 @@ def load_config(config_path: str) -> PipelineConfig:
     # Create PipelineConfig from dictionary
     config = PipelineConfig.from_dict(config_dict)
     
-    # Validate configuration
-    config.validate()
+    # Validate configuration (check files exist in production)
+    config.validate(check_files=True)
     
     return config
 
