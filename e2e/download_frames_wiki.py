@@ -151,7 +151,11 @@ def main():
     print("=" * 80)
     print(f"✅ Successfully downloaded {download_stats['successful']} articles")
     print(f"❌ Failed: {download_stats['failed']}")
-    print(f"⏭️  Skipped (already exist): {download_stats['skipped']}")
+    
+    # Only show skipped count if it exists in stats
+    if 'skipped' in download_stats:
+        print(f"⏭️  Skipped (already exist): {download_stats['skipped']}")
+    
     print(f"\nArticles saved to: {output_dir}")
     print(f"\nNext step: Create passages for RAG retrieval")
     print(f"  python chunk_frames_wiki.py --articles-dir {output_dir}")

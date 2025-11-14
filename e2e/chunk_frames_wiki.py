@@ -140,7 +140,7 @@ def main():
         print(f"   - Memory usage: ~{args.workers * 0.5:.1f}GB (each worker loads embedding models)")
         print(f"   - Model loading contention can cause hanging/deadlock")
         print(f"   - GPU conflicts if using CUDA (will auto-switch to CPU)")
-        print(f"   STRONGLY RECOMMENDED: Use 2-8 workers for semantic, or --no-semantic for speed")
+        print(f"   STRONGLY RECOMMENDED: Use 2-8 workers for semantic")
         print(f"   Proceeding anyway... (this may hang or crash)")
     
     # ===================================================================
