@@ -22,6 +22,12 @@ Usage:
     python3 wikifetch/download_frames_docs.py --output-dir wiki_articles --workers 20
 """
 
+from wikifetch import (
+    WikipediaExtractor,
+    WikipediaDownloader,
+    extract_wikipedia_urls
+)
+from retrieval import PromptLoader
 import argparse
 import sys
 from pathlib import Path
@@ -30,12 +36,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import from our modular structure
-from retrieval import PromptLoader
-from wikifetch import (
-    WikipediaExtractor,
-    WikipediaDownloader,
-    extract_wikipedia_urls
-)
 
 
 def main():
