@@ -1,4 +1,4 @@
-\# E2E: RAG benchmark
+# E2E: RAG benchmark
 This is a WIP proposal, and will undergo changes.
 
 ## Benchmark flow
