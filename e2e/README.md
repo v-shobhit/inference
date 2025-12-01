@@ -1,4 +1,4 @@
-# E2E: RAG benchmark
+\# E2E: RAG benchmark
 This is a WIP proposal, and will undergo changes.
 
 ## Benchmark flow
@@ -35,231 +35,83 @@ enroot start --root --rw \
 cd /work && ./setup.sh
 ```
 
-## Corpus creation
-Starting from [FRAMES](https://huggingface.co/datasets/google/frames-benchmark), we have a set of tuples as:
-```
-[UserQuery, WikiLinks, Answer]
-```
+## Step 1: Download documents
 
-### Method 1: Clean Wikipedia Content (Recommended)
-We extract all the unique Wikipedia links and download **clean article content** directly using the Wikipedia API. This approach is inspired by [WikiExtractor](https://github.com/attardi/wikiextractor) and provides several advantages over HTML/PDF:
+The first step is to download the frames dataset, then the documents referred to in this dataset. 
 
-**Advantages:**
-- ✅ **Cleaner content**: No navigation bars, sidebars, references, or irrelevant HTML artifacts
-- ✅ **Faster processing**: Direct API access, no HTML/PDF parsing needed
-- ✅ **Better RAG quality**: Only article text content, improving retrieval accuracy
-- ✅ **Automatic cleaning**: Removes "See also", "References", "External links" sections
-- ✅ **Smaller storage**: Plain text files instead of HTML/PDF
-
-You may use the [frames_wiki_fetch.py](./frames_wiki_fetch.py) script:
 ```bash
-$ python3 frames_wiki_fetch.py --help
-usage: frames_wiki_fetch.py [-h] [--tsv-path TSV_PATH] [--output-dir OUTPUT_DIR]
-                             [--max-urls MAX_URLS] [--download-workers N]
-                             [--create-chunks] [--chunk-size CHUNK_SIZE] 
-                             [--overlap OVERLAP] [--semantic] [--no-semantic]
-                             [--chunk-workers N] [--chunk-device {cpu,cuda}]
+./download_frames.sh  # downloads patched frames dataset from huggingface
 
-Download clean Wikipedia articles from FRAMES dataset using Wikipedia API
-
-options:
-  -h, --help            show this help message and exit
-  --tsv-path TSV_PATH   Input TSV file with FRAMES data (default: download from Hugging Face)
-  --output-dir OUTPUT_DIR
-                        Output directory for clean article text files (default: wiki_clean_articles)
-  --max-urls MAX_URLS   Maximum number of URLs to process (default: all)
-  --download-workers N  Number of parallel download workers (default: 10, max: 20)
-  --create-chunks       Create passages JSON file with chunked content
-  --chunk-size CHUNK_SIZE
-                        Maximum characters per chunk (default: 512)
-  --overlap OVERLAP     Overlap between chunks in characters (default: 50)
-  --semantic            Use semantic chunking (default: True)
-  --no-semantic         Disable semantic chunking
-  --chunk-workers N     Parallel chunk workers (default: 1, max 8 for semantic)
-  --chunk-device        Device for chunking: cpu or cuda (default: auto)
-
-## Sample usage - Download and create passages in one step
-$ python3 frames_wiki_fetch.py --output-dir wiki_clean --download-workers 20 --create-chunks --chunk-size 512 --overlap 50
-
-## Or download first, then create passages later
-$ python3 frames_wiki_fetch.py --output-dir wiki_clean --download-workers 20
-$ python3 frames_wiki_fetch.py --output-dir wiki_clean --create-chunks
+python3 wikifetch/download_frames_docs.py \
+  --tsv-path data/frames/test.tsv \
+  --output-dir wiki_articles --workers 16
+# Downloads the wikipedia content from the article urls in the frames dataset
 ```
 
-### Method 2: HTML/PDF Download (Legacy)
-**Note:** This method is deprecated in favor of the clean Wikipedia content approach above.
-
-The legacy approach downloads web pages as PDFs using [`wkhtmltopdf`](https://wkhtmltopdf.org/) or as HTML files.
-
-You may use the [download.py](./download.py) script (formerly download_pdf.py):
+## Step 2: Chunk the articles into passages
+Due to the context length limitations of the retriever (embedding) and reranker models, we chunk the articles into smaller passages. 
 ```bash
-$ python3 download.py --help
-usage: download.py [-h] [--tsv_path TSV_PATH] [--max_urls MAX_URLS]
-                   [--output_dir OUTPUT_DIR] [--output_data OUTPUT_DATA]
-                   [--processes PROCESSES] [--format {pdf,html}]
-
-Download FRAMES dataset from Hugging Face and convert URLs to PDFs or HTML files
-
-options:
-  -h, --help            show this help message and exit
-  --tsv_path TSV_PATH   Input TSV file (default: download FRAMES dataset)
-  --max_urls MAX_URLS   Maximum number of URLs to process (default: all)
-  --output_dir OUTPUT_DIR
-                        Output directory for downloaded files (default: doc_downloads)
-  --output_data OUTPUT_DATA
-                        Output directory for dataset file (default: data)
-  --processes PROCESSES
-                        Number of parallel processes (default: 10)
-  --format {pdf,html}   Output format: pdf or html (default: pdf)
-
-## Sample usage
-$ python3 download.py --output_dir doc_pdf --format pdf --processes 30
-$ python3 download.py --output_dir doc_html --format html --processes 30
+python chunk_frames_wiki.py \
+  --articles-dir wiki_articles \
+  --output wiki_articles/passages.json \
+  --similarity-threshold 0.25 \
+  --chunk-size 512 \
+  --overlap 10 \
+  --workers 8 \
+  --device cuda
 ```
 
-## Corpus preprocessing
+## Step 3: Create a VectorDB from passages
+Once the set of articles are transformed into passages, we can create a vector DB for lookup.
 
-### For Clean Wikipedia Content (Method 1)
-When using the `frames_wiki_fetch.py` script with the `--create-chunks` flag, preprocessing is **already done**! The script outputs:
-- Clean text files (one per Wikipedia article)
-- Metadata JSON files (article title, URL, etc.)
-- A `passages.json` file with chunked content ready for RAG
-
-The passages JSON has the following schema:
-```json
-{
-    "index": 0,
-    "article_filename": "Article_Title.txt",
-    "article_title": "Article Title",
-    "article_url": "https://en.wikipedia.org/wiki/Article_Title",
-    "source_url": "https://en.wikipedia.org/wiki/Article_Title",
-    "passage": "Clean text passage from the article",
-    "passage_length": 450
-}
-```
-
-**No additional preprocessing needed!** The text is already clean and chunked.
-
-### For HTML Files (Method 2 - Legacy)
-If you downloaded HTML files, you can process them using the [preprocess_html.py](./preprocess_html.py) script:
 ```bash
-$ python3 preprocess_html.py --help
-# Process all HTML files in a folder
-python preprocess_html.py path/to/html/folder --output path/to/output/folder --workers 8
+python create_vector_store.py \
+  --passages wiki_articles/passages.json \
+  --output wiki_articles/passages_vectordb.pkl \
+  --device cuda
 ```
 
-### For PDF Files (Method 2 - Legacy)
-If you downloaded PDFs, you need to extract text content using [PyMuPDF](https://pypi.org/project/PyMuPDF/) (`fitz`).
+## Step 4: Run retrieval component on FRAMES
 
-Important considerations:
-- Extracted text from a single PDF document has many characters.
-- However, embedding models (especially rerankers like [`ColBERTv2`](https://huggingface.co/colbert-ir/colbertv2.0)) have a size restriction on the maximum length of sequence they can encode (~512). 
-- Thus, we break down PDFs into chunks called "passages".
-    - Each passage belongs to a single unique PDF source.
+Now, we have the vectorDB - in order to run the retriever component, we first create a `config.yml` file:
 
-In this step:
-- Input: a set of PDFs
-- Output:
-    - a set of txt documents (1 per PDF), and
-    - a JSON file of passages.
+```yaml
+data:
+  vector_store: "wiki_articles/passages_vectordb.pkl"
+  tsv_path: "data/frames-benchmark/test.tsv"
+  num_prompts: all
 
-The passages JSON has a schema as follows:
-```json
-{
-    "index": 0,
-    "pdf_filename": "name_of_file.pdf",
-    "passage": "Long passage from (part of) pdf_filename"
-}
+device: "cuda"
+
+retrieval:
+  model: "intfloat/e5-base-v2"
+  top_k: 20 # top number of docs retrieved
+
+reranker:
+  enabled: true
+  model: "colbert-ir/colbertv2.0"
+  top_p: 0.4 # cumulative score of top ranked docs that are taken
+
+rewriter:
+  enabled: true
+  endpoint: "http://localhost:30001/v1" # SGLang endpoint
+  model: "meta-llama/Meta-Llama-3.1-8B-Instruct"
+  steps: 5 # number of times rewriter is invoked
+  queries_per_step: 5 # number of queries generated per step
+  temperature: 0.7 # LLM sampling
+  max_tokens: 1024 # LLM sampling
+
+parallel:
+  max_workers: 4  # Optional: Number of parallel workers (default: 1 = sequential)
+
+output:
+  results: "data/retrieval_results.pkl"    # Results of retrieval pipeline
+  rewriter_io: "data/rewriter_io.pkl"      # Optional: save query generation I/O
+  retriever_io: "data/retriever_io.pkl"    # Optional: save retrieval I/O
+  reranker_io: "data/reranker_io.pkl"      # Optional: save reranking I/O
 ```
 
-You may use the [`read_pdf.py`](./read_pdf.py) script:
+Then, 
 ```bash
-$ python3 read_pdf.py --help
-usage: read_pdf.py [-h] [--json-file JSON_FILE] [--max-files MAX_FILES] [--max-length MAX_LENGTH]
-                   [--overlap OVERLAP]
-                   input_dir output_dir
-
-Extract text from all PDFs in a directory
-
-positional arguments:
-  input_dir             Input directory containing PDF files
-  output_dir            Output directory for text files
-
-options:
-  -h, --help            show this help message and exit
-  --json-file JSON_FILE
-                        Output JSON file path for passages data (enables JSON creation)
-  --max-files MAX_FILES
-                        Maximum number of PDF files to process (default: all files)
-  --max-length MAX_LENGTH
-                        Maximum length of each passage in characters (default: 512)
-  --overlap OVERLAP     Overlap between passages in characters (default: 50)
-
-## Sample usage
-$ python3 read_pdf.py doc_pdf doc_txt_len256_overlap32 --max-length 256 --json-file doc_txt_fixed_len256_overlap32/passages.json --overlap 32
-```
-
-### Important Notes on Chunking:
-1. **Clean Wikipedia method**: Uses sentence-aware chunking that preserves sentence boundaries for better context.
-2. **PDF/HTML method**: Character-level chunking may split sentences mid-way.
-3. Passage size directly affects vector operations. Consider the impact of passage length + overlap on vector size, ingestion time, and lookup time.
-4. For the clean Wikipedia method, recommended settings: `--chunk-size 512 --overlap 50`
-
-## Single-shot lookup
-1. Embed query: `Query text` -> `Query Tokens` -> `Query vector`
-2. Perform vector similarity search, and return top-k documents. 
-3. Perform reranking using ColBERT (Late interaction and `MaxSim` scoring)
-
-Rerankers: Slow but accurate  
-Retrievers: Fast but less accurate
-
-## Multi-step lookup (TODO)
-Instead of a single step retrieval, we perform multiple steps. In each step, we give the LLM partial retrieved context, and the user query - and ask it to generate search queries. This helps in breaking down multi-step reasoning questions.
-
-Consider, as an example, the below query: 
-```none
-Who won the French Open Mens Singles tournament the year that New York City FC won their first MLS Cup title?
-```
-
-This is a classic multi-step reasoning. The logical deduction of a well-performing system is: 
-```
-- What year did New York City FC win their first MLS Cup title
-(retrieve docs regarding MLS cup winners)
-(say, answer is 2005)
-- Who won the French Open Mens Singles tournament in 2005?
-(retrieve 2005 French open document)
-```
-
-The flow now looks something like: 
-1. User query comes in
-2. Repeat 1..n times:  
-    1. Given to query rewriter, which gives at most k search queries.
-    2. For each query:
-        1. Encode into vector
-        2. Perform vector search and retrieve relevant documents
-3. Rerank retrieved documents, and choose top-n (call this filtered documents)
-4. Give filtered documents + user query to LLM generator
-
-The query rewriter may be thought of as an LLM with the following prompt: 
-```
-You are an expert at generating search queries to help answer complex questions using a collection of Wikipedia articles. 
-
-Given the following:
-- The user's original question.
-- Relevant facts or documents already gathered so far (if any).
-
-Your task:  
-Generate [k] concise, focused search queries that could be used to find specific information from Wikipedia to help answer the question.  
-- Make each query target a different aspect of the problem or missing information.  
-- Avoid duplicating information already in the context.  
-- Do not reference source filenames, document titles, or include any special characters.
-- Think step by step before writing each query.
-- List the missing pieces of information, then write k queries that could best retrieve them.
-
-[User Question:]
-{user_question}
-
-[Known Facts / Retrieved Documents:]
-{summarized_partial_context}
-
+python3 run_frames_retrieval.py --config config.yml
 ```

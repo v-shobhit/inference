@@ -10,20 +10,24 @@ Requirements:
 
 Usage:
     # Download from FRAMES test split (default)
-    python download_frames_wiki.py --output-dir wiki_articles
+    python3 wikifetch/download_frames_docs.py --output-dir wiki_articles
 
     # From custom TSV file
-    python download_frames_wiki.py --tsv-path data/custom.tsv --output-dir wiki_articles
+    python3 wikifetch/download_frames_docs.py --tsv-path data/custom.tsv --output-dir wiki_articles
 
     # Limit number of articles
-    python download_frames_wiki.py --output-dir wiki_articles --max-urls 100
+    python3 wikifetch/download_frames_docs.py --output-dir wiki_articles --max-urls 100
 
     # Control parallelism
-    python download_frames_wiki.py --output-dir wiki_articles --workers 20
+    python3 wikifetch/download_frames_docs.py --output-dir wiki_articles --workers 20
 """
 
 import argparse
+import sys
 from pathlib import Path
+
+# Add parent directory to path so we can import from e2e modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import from our modular structure
 from retrieval import PromptLoader
