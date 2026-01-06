@@ -1,1 +1,0 @@
-Please go to closed/NVIDIA/llama3-8b-edge for README
