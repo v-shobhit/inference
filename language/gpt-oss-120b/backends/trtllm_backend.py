@@ -86,7 +86,8 @@ class TRTLLMBackend(BaseBackend):
         """Get the next server URL using thread-safe round-robin selection."""
         with self._index_lock:
             url = self.server_urls[self.current_server_index]
-            self.current_server_index = (self.current_server_index + 1) % self.num_servers
+            self.current_server_index = (
+                self.current_server_index + 1) % self.num_servers
             return url
 
     def initialize(self) -> None:
@@ -95,7 +96,8 @@ class TRTLLMBackend(BaseBackend):
             logger.warning("Backend already initialized")
             return
 
-        logger.info(f"Initializing TRT-LLM backend with {self.num_servers} server(s):")
+        logger.info(
+            f"Initializing TRT-LLM backend with {self.num_servers} server(s):")
         for i, url in enumerate(self.server_urls):
             logger.info(f"  Server {i+1}: {url}")
         logger.info(
@@ -372,7 +374,8 @@ class TRTLLMBackend(BaseBackend):
 
                             chunk = json.loads(json_str)
 
-                            # Extract delta text from OpenAI-compatible response
+                            # Extract delta text from OpenAI-compatible
+                            # response
                             choices = chunk.get("choices", [])
                             if not choices:
                                 continue
@@ -428,7 +431,8 @@ class TRTLLMBackend(BaseBackend):
                             continue
 
         except asyncio.TimeoutError:
-            logger.error(f"Streaming request to {server_url} timed out after {self.timeout}s")
+            logger.error(
+                f"Streaming request to {server_url} timed out after {self.timeout}s")
             yield {
                 "delta_token_ids": [],
                 "delta_text": "",
@@ -439,7 +443,9 @@ class TRTLLMBackend(BaseBackend):
                 "metadata": {}
             }
         except Exception as e:
-            logger.error(f"Streaming request to {server_url} failed: {e}", exc_info=True)
+            logger.error(
+                f"Streaming request to {server_url} failed: {e}",
+                exc_info=True)
             yield {
                 "delta_token_ids": [],
                 "delta_text": "",
