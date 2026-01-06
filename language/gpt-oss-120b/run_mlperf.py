@@ -28,7 +28,7 @@ import mlperf_loadgen as lg
 import pandas as pd
 from tqdm import tqdm
 
-from backends import SGLangBackend
+from backends import SGLangBackend, TRTLLMBackend
 from mlperf import OfflineSUT, ServerSUT, QuerySampleLibrary
 from utils import load_tokenized_dataset, StandardTokenizer
 
@@ -127,7 +127,7 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--backend",
         type=str,
         default="sglang",
-        choices=["sglang"],
+        choices=["sglang", "trtllm"],
         help="Backend to use for inference"
     )
 
@@ -135,7 +135,22 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "--server-url",
         type=str,
         default="http://localhost:30000",
-        help="Server URL for backend (SGLang)"
+        help="Server URL for backend (SGLang or TRT-LLM)"
+    )
+
+    # TRT-LLM specific options
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="gpt-oss-120b",
+        help="Model name for TRT-LLM API requests"
+    )
+
+    parser.add_argument(
+        "--tokenizer-name",
+        type=str,
+        default="openai/gpt-oss-120b",
+        help="HuggingFace tokenizer name for TRT-LLM response tokenization"
     )
 
     # Generation configuration
@@ -356,12 +371,21 @@ def main():
 
         # Initialize backend
         logger.debug(f"Initializing {args.backend} backend...")
+        # Set pool size to match max_concurrency with small safety margin
+        # This prevents "connection pool is full" warnings
+        pool_size = int(args.max_concurrency * 1.1)  # 10% safety margin
+
         if args.backend == "sglang":
-            # Set pool size to match max_concurrency with small safety margin
-            # This prevents "connection pool is full" warnings
-            pool_size = int(args.max_concurrency * 1.1)  # 10% safety margin
             backend = SGLangBackend(
                 server_url=args.server_url,
+                timeout=args.timeout,
+                max_pool_size=pool_size
+            )
+        elif args.backend == "trtllm":
+            backend = TRTLLMBackend(
+                server_url=args.server_url,
+                model_name=args.model_name,
+                tokenizer_name=args.tokenizer_name,
                 timeout=args.timeout,
                 max_pool_size=pool_size
             )

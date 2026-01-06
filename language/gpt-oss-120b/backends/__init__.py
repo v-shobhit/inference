@@ -3,8 +3,10 @@
 
 from .base_backend import BaseBackend
 from .sglang_backend import SGLangBackend
+from .trtllm_backend import TRTLLMBackend
 
 __all__ = [
     "BaseBackend",
     "SGLangBackend",
+    "TRTLLMBackend",
 ]
